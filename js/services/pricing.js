@@ -186,5 +186,81 @@ CP.pricing = {
       longestPartHours,
       turnaroundDays
     };
+  },
+
+  /**
+   * Converts a numeric INR amount into words following Indian numbering system (Lakhs, Crores).
+   * E.g. 1234.5 -> "Rupees One Thousand Two Hundred Thirty Four and Fifty Paise Only"
+   * @param {number} n - Amount in INR
+   * @returns {string} Plain text representation
+   */
+  numberToWordsINR(n) {
+    const num = Number(n);
+    if (isNaN(num)) return 'Rupees Zero Only';
+
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+      'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+    function convert999(val) {
+      let str = '';
+      if (val >= 100) {
+        str += ones[Math.floor(val / 100)] + ' Hundred';
+        val %= 100;
+        if (val > 0) str += ' ';
+      }
+      if (val > 0) {
+        if (val < 20) {
+          str += ones[val];
+        } else {
+          str += tens[Math.floor(val / 10)];
+          if (val % 10 > 0) {
+            str += ' ' + ones[val % 10];
+          }
+        }
+      }
+      return str.trim();
+    }
+
+    function convertInteger(val) {
+      if (val === 0) return 'Zero';
+      const parts = [];
+
+      const crores = Math.floor(val / 10000000);
+      val %= 10000000;
+      if (crores > 0) {
+        parts.push(convertInteger(crores) + ' Crore');
+      }
+
+      const lakhs = Math.floor(val / 100000);
+      val %= 100000;
+      if (lakhs > 0) {
+        parts.push(convert999(lakhs) + ' Lakh');
+      }
+
+      const thousands = Math.floor(val / 1000);
+      val %= 1000;
+      if (thousands > 0) {
+        parts.push(convert999(thousands) + ' Thousand');
+      }
+
+      if (val > 0) {
+        parts.push(convert999(val));
+      }
+
+      return parts.join(' ');
+    }
+
+    const absNum = Math.abs(num);
+    const intPart = Math.floor(absNum);
+    const paise = Math.round((absNum - intPart) * 100);
+
+    const intWords = convertInteger(intPart);
+    const paiseWords = paise > 0 ? convert999(paise) : '';
+
+    if (paise > 0) {
+      return `Rupees ${intWords} and ${paiseWords} Paise Only`;
+    }
+    return `Rupees ${intWords} Only`;
   }
 };
