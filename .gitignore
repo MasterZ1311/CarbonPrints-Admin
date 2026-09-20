@@ -1,0 +1,6 @@
+# Development scratch & temporary backups
+_git_staging_backup/
+scratch/
+*.log
+.DS_Store
+Thumbs.db

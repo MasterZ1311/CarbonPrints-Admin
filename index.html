@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CarbonPrints Company OS</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/print.css" media="print">
+</head>
+<body>
+  <!-- Main application shell -->
+  <div class="app-layout">
+    <!-- Left sidebar navigation -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">CP</div>
+        <div class="brand-info">
+          <span class="brand-title">CarbonPrints</span>
+          <span class="brand-sub">Company OS</span>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <a href="#/dashboard" class="nav-item" data-route="#/dashboard">
+          <span class="nav-icon" aria-hidden="true">📊</span>
+          <span class="nav-label">Dashboard</span>
+        </a>
+        <a href="#/order-desk" class="nav-item" data-route="#/order-desk">
+          <span class="nav-icon" aria-hidden="true">📝</span>
+          <span class="nav-label">Order Desk</span>
+        </a>
+        <a href="#/orders" class="nav-item" data-route="#/orders">
+          <span class="nav-icon" aria-hidden="true">📦</span>
+          <span class="nav-label">Orders &amp; Billing</span>
+        </a>
+        <a href="#/farm" class="nav-item" data-route="#/farm">
+          <span class="nav-icon" aria-hidden="true">🖨️</span>
+          <span class="nav-label">Farm Board</span>
+        </a>
+        <a href="#/inventory" class="nav-item" data-route="#/inventory">
+          <span class="nav-icon" aria-hidden="true">🧵</span>
+          <span class="nav-label">Spools &amp; Stock</span>
+        </a>
+        <a href="#/qc" class="nav-item" data-route="#/qc">
+          <span class="nav-icon" aria-hidden="true">🔍</span>
+          <span class="nav-label">QC &amp; Scrap</span>
+        </a>
+        <a href="#/maintenance" class="nav-item" data-route="#/maintenance">
+          <span class="nav-icon" aria-hidden="true">🔧</span>
+          <span class="nav-label">Maintenance</span>
+        </a>
+        <a href="#/data" class="nav-item" data-route="#/data">
+          <span class="nav-icon" aria-hidden="true">💾</span>
+          <span class="nav-label">Data &amp; Backup</span>
+        </a>
+        <a href="#/settings" class="nav-item" data-route="#/settings">
+          <span class="nav-icon" aria-hidden="true">⚙️</span>
+          <span class="nav-label">Settings</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="app-version">v0.1.0 • Chennai</span>
+      </div>
+    </aside>
+
+    <!-- Content area -->
+    <div class="main-content">
+      <!-- Top alert bar container -->
+      <div id="global-alerts" class="global-alerts" role="region" aria-label="Global Alerts"></div>
+
+      <!-- Main view container -->
+      <main id="view" class="view-container"></main>
+    </div>
+  </div>
+
+  <!-- Toast notification container -->
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Modal overlay container -->
+  <div id="modal-container" class="modal-container" aria-hidden="true"></div>
+
+  <!-- Dedicated print root for invoices & reports -->
+  <div id="print-root" class="print-root"></div>
+
+  <!-- JavaScript Modules in explicit dependency order -->
+  <!-- 1. Core modules -->
+  <script src="js/core/util.js"></script>
+  <script src="js/core/bus.js"></script>
+  <script src="js/core/defaults.js"></script>
+  <script src="js/core/store.js"></script>
+  <script src="js/core/router.js"></script>
+  <script src="js/core/ui.js"></script>
+  <script src="js/core/dev.js"></script>
+
+  <!-- 2. Service modules -->
+  <script src="js/services/pricing.js"></script>
+  <script src="js/services/wa.js"></script>
+  <script src="js/services/docs.js"></script>
+  <script src="js/services/inventory-svc.js"></script>
+  <script src="js/services/scrap-svc.js"></script>
+  <script src="js/services/maint-svc.js"></script>
+  <script src="js/services/csv.js"></script>
+  <script src="js/services/octoprint.js"></script>
+
+  <!-- 3. Feature modules -->
+  <script src="js/modules/dashboard.js"></script>
+  <script src="js/modules/orderdesk.js"></script>
+  <script src="js/modules/orders.js"></script>
+  <script src="js/modules/farm.js"></script>
+  <script src="js/modules/inventory.js"></script>
+  <script src="js/modules/qc.js"></script>
+  <script src="js/modules/maintenance.js"></script>
+  <script src="js/modules/data.js"></script>
+  <script src="js/modules/settings.js"></script>
+
+  <!-- 4. Bootstrap / Entrypoint -->
+  <script src="js/app.js"></script>
+</body>
+</html>

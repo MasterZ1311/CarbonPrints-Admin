@@ -1,0 +1,63 @@
+/* ==========================================================================
+   CarbonPrints Company OS - Print Stylesheet
+   Targets: A4 format with 12mm margins, offline-first invoice/challan layout
+   ========================================================================== */
+
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+@media print {
+  /* Hide non-printable app shell elements */
+  .sidebar,
+  .sidebar-nav,
+  .global-alerts,
+  .toast-container,
+  .modal-container,
+  .btn,
+  .tabs,
+  button,
+  #view {
+    display: none !important;
+  }
+
+  /* Reset body and layout container for printing */
+  html, body, .app-layout, .main-content {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Make print-root the primary visible container */
+  #print-root,
+  .print-root {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+}
+
+/* Screen Preview Mode (When class 'print-preview-active' is on body) */
+body.print-preview-active .sidebar,
+body.print-preview-active .global-alerts,
+body.print-preview-active #view {
+  display: none;
+}
+
+body.print-preview-active #print-root {
+  display: block;
+  max-width: 210mm;
+  min-height: 297mm;
+  margin: 20px auto;
+  padding: 12mm;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid #cbd5e1;
+}
