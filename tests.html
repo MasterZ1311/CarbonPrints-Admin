@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CarbonPrints Company OS - Quality Pass Self-Test Suite</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface-alt: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+      --brand: #0d9488;
+      --brand-light: #14b8a6;
+      --success: #22c55e;
+      --success-bg: rgba(34, 197, 94, 0.15);
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.15);
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 32px 20px;
+    }
+    .container { max-width: 960px; margin: 0 auto; }
+    header {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    h1 { font-size: 22px; font-weight: 700; color: #ffffff; }
+    .subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+    .summary-card {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      background: var(--surface);
+      padding: 12px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .kpi { display: flex; flex-direction: column; }
+    .kpi-num { font-size: 24px; font-weight: 800; font-family: var(--font-mono); }
+    .kpi-num.pass { color: var(--success); }
+    .kpi-num.fail { color: var(--danger); }
+    .kpi-lbl { font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+    .status-badge {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .status-badge.all-passed { background: var(--success-bg); color: var(--success); border: 1px solid var(--success); }
+    .status-badge.has-failed { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
+
+    .test-suite {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .suite-header {
+      padding: 12px 16px;
+      background: var(--surface-alt);
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .test-list { list-style: none; }
+    .test-item {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 13px;
+    }
+    .test-item:hover { background: rgba(255, 255, 255, 0.02); }
+    .badge-icon {
+      font-weight: 800;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+    }
+    .badge-pass { background: var(--success-bg); color: var(--success); }
+    .badge-fail { background: var(--danger-bg); color: var(--danger); }
+    .test-desc { flex: 1; word-break: break-word; }
+    .test-err { margin-top: 4px; color: var(--danger); font-family: var(--font-mono); font-size: 12px; background: rgba(239, 68, 68, 0.1); padding: 4px 8px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>CarbonPrints Company OS — Self-Test Suite</h1>
+        <div class="subtitle">Offline-First Quality Verification • Pure In-Memory Testing (CP.store.useMemory)</div>
+      </div>
+      <div class="summary-card">
+        <div class="kpi"><span class="kpi-num" id="total-tests">0</span><span class="kpi-lbl">Total</span></div>
+        <div class="kpi"><span class="kpi-num pass" id="passed-tests">0</span><span class="kpi-lbl">Passed</span></div>
+        <div class="kpi"><span class="kpi-num fail" id="failed-tests">0</span><span class="kpi-lbl">Failed</span></div>
+        <div id="overall-status" class="status-badge">Running...</div>
+      </div>
+    </header>
+
+    <div id="test-results"></div>
+  </div>
+
+  <!-- Load Core and Services scripts (no UI feature modules) -->
+  <script src="js/core/util.js?v=qa12"></script>
+  <script src="js/core/bus.js?v=qa12"></script>
+  <script src="js/core/defaults.js?v=qa12"></script>
+  <script src="js/core/store.js?v=qa12"></script>
+  <script src="js/core/router.js?v=qa12"></script>
+  <script src="js/core/ui.js?v=qa12"></script>
+  <script src="js/services/pricing.js?v=qa12"></script>
+  <script src="js/services/wa.js?v=qa12"></script>
+  <script src="js/services/docs.js?v=qa12"></script>
+  <script src="js/services/inventory-svc.js?v=qa12"></script>
+  <script src="js/services/scrap-svc.js?v=qa12"></script>
+  <script src="js/services/maint-svc.js?v=qa12"></script>
+  <script src="js/services/csv.js?v=qa12"></script>
+  <script src="js/services/octoprint.js?v=qa12"></script>
+
+  <!-- Tiny Assertion Runner -->
+  <script>
+    (function () {
+      // 1. Enable sandbox in-memory storage so live data is untouched
+      if (CP.store && typeof CP.store.useMemory === 'function') {
+        CP.store.useMemory(true);
+        CP.store.init();
+      }
+
+      // Initialize background services with in-memory store
+      if (CP.inventory && typeof CP.inventory.init === 'function') CP.inventory.init();
+      if (CP.scrap && typeof CP.scrap.init === 'function') CP.scrap.init();
+      if (CP.maint && typeof CP.maint.init === 'function') CP.maint.init();
+
+      const suites = [];
+      let currentSuite = null;
+
+      function suite(name) {
+        currentSuite = { name, tests: [] };
+        suites.push(currentSuite);
+      }
+
+      function test(name, fn) {
+        if (!currentSuite) suite('General Tests');
+        currentSuite.tests.push({ name, fn });
+      }
+
+      function assert(condition, message = 'Assertion failed') {
+        if (!condition) throw new Error(message);
+      }
+
+      function assertEqual(actual, expected, message = '') {
+        const aStr = JSON.stringify(actual);
+        const eStr = JSON.stringify(expected);
+        if (aStr !== eStr) {
+          throw new Error(`${message ? message + ': ' : ''}Expected ${eStr} but got ${aStr}`);
+        }
+      }
+
+      function assertClose(actual, expected, tolerance = 0.01, message = '') {
+        if (Math.abs(actual - expected) > tolerance) {
+          throw new Error(`${message ? message + ': ' : ''}Expected ~${expected} (±${tolerance}) but got ${actual}`);
+        }
+      }
+
+      // =======================================================================
+      // SUITE 1: pricing.partPrice
+      // =======================================================================
+      suite('1. pricing.partPrice');
+
+      test('Part price with standard PLA at 0.20mm (base rate ₹4/g)', () => {
+        const settings = { pricing: { ratePerGram: { PLA: 4 }, layerMultiplier: { '0.20': 1.0 } } };
+        const part = { material: 'PLA', layer: '0.20', weightG: 50, qty: 1 };
+        const price = CP.pricing.partPrice(part, settings);
+        assertEqual(price, 200, '50g * ₹4 * 1.0 = ₹200');
+      });
+
+      test('Part price with draft 0.28mm layer multiplier (0.85x)', () => {
+        const settings = { pricing: { ratePerGram: { PLA: 4 }, layerMultiplier: { '0.28': 0.85 } } };
+        const part = { material: 'PLA', layer: '0.28', weightG: 100, qty: 1 };
+        const price = CP.pricing.partPrice(part, settings);
+        assertEqual(price, 340, '100g * ₹4 * 0.85 = ₹340');
+      });
+
+      test('Part price with fine 0.12mm layer multiplier (1.40x)', () => {
+        const settings = { pricing: { ratePerGram: { ABS: 5 }, layerMultiplier: { '0.12': 1.40 } } };
+        const part = { material: 'ABS', layer: '0.12', weightG: 20, qty: 1 };
+        const price = CP.pricing.partPrice(part, settings);
+        assertEqual(price, 140, '20g * ₹5 * 1.40 = ₹140');
+      });
+
+      test('Part price scales correctly with quantity', () => {
+        const settings = { pricing: { ratePerGram: { TPU: 6 }, layerMultiplier: { '0.20': 1.0 } } };
+        const part = { material: 'TPU', layer: '0.20', weightG: 25, qty: 4 };
+        const price = CP.pricing.partPrice(part, settings);
+        assertEqual(price, 600, '25g * 4 * ₹6 = ₹600');
+      });
+
+      // =======================================================================
+      // SUITE 2: calcOrder with/without GST and inter-state
+      // =======================================================================
+      suite('2. calcOrder (GST & Inter-State Handling)');
+
+      test('Order without GST (GST disabled)', () => {
+        const settings = { pricing: { gstEnabled: false, ratePerGram: { PLA: 4 }, layerMultiplier: { '0.20': 1.0 } } };
+        const order = {
+          parts: [{ material: 'PLA', layer: '0.20', weightG: 100, qty: 1 }],
+          pricing: { discountPct: 10 }
+        };
+        const calc = CP.pricing.calcOrder(order, settings);
+        assertEqual(calc.subtotal, 400, 'Subtotal should be ₹400');
+        assertEqual(calc.discountAmt, 40, '10% discount is ₹40');
+        assertEqual(calc.gstAmt, 0, 'GST amount is ₹0 when disabled');
+        assertEqual(calc.total, 360, 'Total should be ₹360');
+      });
+
+      test('Order with 18% GST (Intra-State: CGST 9% + SGST 9%)', () => {
+        const settings = {
+          pricing: { gstEnabled: true, gstPct: 18, interState: false, ratePerGram: { PLA: 4 }, layerMultiplier: { '0.20': 1.0 } }
+        };
+        const order = {
+          parts: [{ material: 'PLA', layer: '0.20', weightG: 250, qty: 1 }], // 1000
+          pricing: { discountPct: 0 }
+        };
+        const calc = CP.pricing.calcOrder(order, settings);
+        assertEqual(calc.subtotal, 1000);
+        assertEqual(calc.gstAmt, 180, '18% GST on ₹1000 is ₹180');
+        assertEqual(calc.cgst, 90, 'CGST is 9% = ₹90');
+        assertEqual(calc.sgst, 90, 'SGST is 9% = ₹90');
+        assertEqual(calc.igst, 0, 'IGST is 0 for intra-state');
+        assertEqual(calc.total, 1180, 'Total is ₹1180');
+      });
+
+      test('Order with 18% GST (Inter-State: IGST 18%)', () => {
+        const settings = {
+          pricing: { gstEnabled: true, gstPct: 18, interState: true, ratePerGram: { PLA: 4 }, layerMultiplier: { '0.20': 1.0 } }
+        };
+        const order = {
+          parts: [{ material: 'PLA', layer: '0.20', weightG: 250, qty: 1 }],
+          pricing: { discountPct: 0 }
+        };
+        const calc = CP.pricing.calcOrder(order, settings);
+        assertEqual(calc.gstAmt, 180);
+        assertEqual(calc.igst, 180, 'IGST is full 18% = ₹180');
+        assertEqual(calc.cgst, 0, 'CGST is 0 for inter-state');
+        assertEqual(calc.sgst, 0, 'SGST is 0 for inter-state');
+        assertEqual(calc.total, 1180);
+      });
+
+      // =======================================================================
+      // SUITE 3: turnaroundDays
+      // =======================================================================
+      suite('3. turnaroundDays Calculation');
+
+      test('Computes turnaround lead time from part hours and post-processing days', () => {
+        const settings = {
+          pricing: { ratePerGram: { PLA: 4 }, layerMultiplier: { '0.20': 1.0 } },
+          production: { gramsPerHour: { '0.20': 10 }, printHoursPerDay: 16, postProcessDays: 1 }
+        };
+        // 160g at 10g/h = 16h print time. 16h / 16h/day = 1 day + 1 postProcessDay = 2 days
+        const order = { parts: [{ material: 'PLA', layer: '0.20', weightG: 160, qty: 1 }] };
+        const calc = CP.pricing.calcOrder(order, settings);
+        assertEqual(calc.totalPrintHours, 16);
+        assertEqual(calc.turnaroundDays, 2);
+      });
+
+      test('Turnaround days never drops below 1 day minimum', () => {
+        const settings = {
+          production: { gramsPerHour: { '0.20': 10 }, printHoursPerDay: 16, postProcessDays: 0 }
+        };
+        const order = { parts: [{ material: 'PLA', layer: '0.20', weightG: 1, qty: 1 }] };
+        const calc = CP.pricing.calcOrder(order, settings);
+        assert(calc.turnaroundDays >= 1, 'Turnaround must be at least 1 day');
+      });
+
+      // =======================================================================
+      // SUITE 4: numberToWordsINR
+      // =======================================================================
+      suite('4. numberToWordsINR');
+
+      test('Converts exact integer amounts to Indian currency words', () => {
+        assertEqual(CP.pricing.numberToWordsINR(0), 'Rupees Zero Only');
+        assertEqual(CP.pricing.numberToWordsINR(1250), 'Rupees One Thousand Two Hundred Fifty Only');
+        assertEqual(CP.pricing.numberToWordsINR(100000), 'Rupees One Lakh Only');
+        assertEqual(CP.pricing.numberToWordsINR(123456), 'Rupees One Lakh Twenty Three Thousand Four Hundred Fifty Six Only');
+      });
+
+      test('Converts fractional amounts with paise to words', () => {
+        assertEqual(CP.pricing.numberToWordsINR(500.50), 'Rupees Five Hundred and Fifty Paise Only');
+        assertEqual(CP.pricing.numberToWordsINR(100.05), 'Rupees One Hundred and Five Paise Only');
+      });
+
+      // =======================================================================
+      // SUITE 5: isValidIndianMobile
+      // =======================================================================
+      suite('5. isValidIndianMobile');
+
+      test('Validates legitimate 10-digit Indian mobile formats', () => {
+        assert(CP.wa.isValidIndianMobile('9840012345'), 'Plain 10 digits starting with 9');
+        assert(CP.wa.isValidIndianMobile('+91 98400 12345'), 'With +91 country prefix and spaces');
+        assert(CP.wa.isValidIndianMobile('09840012345'), 'With leading 0');
+        assert(CP.wa.isValidIndianMobile('7401234567'), 'Starting with 7');
+        assert(CP.wa.isValidIndianMobile('6381234567'), 'Starting with 6');
+      });
+
+      test('Rejects invalid phone numbers', () => {
+        assert(!CP.wa.isValidIndianMobile('1234567890'), 'Starting with 1 is invalid');
+        assert(!CP.wa.isValidIndianMobile('98400'), 'Too short');
+        assert(!CP.wa.isValidIndianMobile('98400123456789'), 'Too long');
+        assert(!CP.wa.isValidIndianMobile(''), 'Empty string is invalid');
+        assert(!CP.wa.isValidIndianMobile(null), 'Null is invalid');
+      });
+
+      // =======================================================================
+      // SUITE 6: waLink
+      // =======================================================================
+      suite('6. waLink Generation');
+
+      test('Formats wa.me link with country code 91 and URL encoded text', () => {
+        const link = CP.wa.waLink('9840012345', 'Hello & Welcome! Total: ₹500');
+        assert(link.startsWith('https://wa.me/919840012345?text='), 'Link starts with wa.me/919840012345');
+        assert(link.includes('%20'), 'Spaces are URL encoded');
+        assert(!link.includes(' '), 'No raw spaces exist');
+      });
+
+      // =======================================================================
+      // SUITE 7: nextId (order, invoice, challan and FY boundary)
+      // =======================================================================
+      suite('7. nextId (Sequential counters & FY Boundary)');
+
+      test('Order ID uses calendar year and 4-digit sequence', () => {
+        CP.store.set('cp_counters', { 'order:2026': 5 });
+        const id = CP.util.nextId('order', new Date('2026-05-15'));
+        assertEqual(id, 'CP-2026-0006', 'Increments order counter to 0006');
+      });
+
+      test('Invoice ID resets across FY boundary (April 1)', () => {
+        CP.store.set('cp_counters', { 'invoice:25-26': 12, 'invoice:26-27': 0 });
+        // March 31, 2026 is FY 25-26
+        const idMarch = CP.util.nextId('invoice', new Date('2026-03-31'));
+        assertEqual(idMarch, 'CP/25-26/0013', 'March 31 belongs to FY 25-26');
+
+        // April 1, 2026 is FY 26-27
+        const idApril = CP.util.nextId('invoice', new Date('2026-04-01'));
+        assertEqual(idApril, 'CP/26-27/0001', 'April 1 begins FY 26-27');
+      });
+
+      test('Challan ID resets across FY boundary (April 1)', () => {
+        CP.store.set('cp_counters', { 'challan:25-26': 8, 'challan:26-27': 0 });
+        const idMarch = CP.util.nextId('challan', new Date('2026-03-31'));
+        assertEqual(idMarch, 'DC/25-26/0009', 'March 31 belongs to FY 25-26');
+
+        const idApril = CP.util.nextId('challan', new Date('2026-04-01'));
+        assertEqual(idApril, 'DC/26-27/0001', 'April 1 begins FY 26-27');
+      });
+
+      // =======================================================================
+      // SUITE 8: csv quoting
+      // =======================================================================
+      suite('8. csv quoting (RFC 4180)');
+
+      test('Escapes fields with commas, quotes, and newlines', () => {
+        assertEqual(CP.csv.escapeField('Standard PLA'), 'Standard PLA');
+        assertEqual(CP.csv.escapeField('Parrys, Chennai'), '"Parrys, Chennai"');
+        assertEqual(CP.csv.escapeField('Ender "3" Pro'), '"Ender ""3"" Pro"');
+        assertEqual(CP.csv.escapeField("Line 1\nLine 2"), "\"Line 1\nLine 2\"");
+      });
+
+      // =======================================================================
+      // SUITE 9: scrap percentage and status thresholds
+      // =======================================================================
+      suite('9. scrap percentage and status thresholds');
+
+      test('Computes scrap rate and maps status to good, warn, bad', () => {
+        CP.store.set('cp_settings', { production: { scrapTargetPct: 5 } });
+        assertEqual(CP.scrap.scrapStatus(3.5), 'good', '3.5% <= 5% target is good');
+        assertEqual(CP.scrap.scrapStatus(5.0), 'good', '5.0% <= 5% target is good');
+        assertEqual(CP.scrap.scrapStatus(8.2), 'warn', '8.2% <= 10% (2x target) is warn');
+        assertEqual(CP.scrap.scrapStatus(12.5), 'bad', '12.5% > 10% is bad');
+      });
+
+      // =======================================================================
+      // SUITE 10: tolerance check logic
+      // =======================================================================
+      suite('10. tolerance check logic');
+
+      test('isDimensionOk verifies dimensions within +/- tolerance', () => {
+        assert(CP.util.isDimensionOk(20.0, 20.1, 0.2), '20.1 is within 20.0 ± 0.2');
+        assert(CP.util.isDimensionOk(20.0, 19.85, 0.2), '19.85 is within 20.0 ± 0.2');
+        assert(!CP.util.isDimensionOk(20.0, 20.25, 0.2), '20.25 is out of tolerance');
+        assert(!CP.util.isDimensionOk(20.0, 19.75, 0.2), '19.75 is out of tolerance');
+      });
+
+      // =======================================================================
+      // SUITE 11: nozzle abrasive counting
+      // =======================================================================
+      suite('11. nozzle abrasive counting');
+
+      test('Increments nozzle abrasive grams extruded only for abrasive materials', () => {
+        const printer = {
+          id: 1, name: 'Printer 01', status: 'printing',
+          nozzle: { type: 'brass', gramsExtruded: 1000, abrasiveGramsExtruded: 200 }
+        };
+        CP.store.set('cp_printers', [printer]);
+        CP.store.set('cp_settings', { production: { abrasiveMaterials: ['ABS'] } });
+
+        // Emit non-abrasive job completion
+        CP.bus.emit('job:completed', {
+          orderId: 'CP-TEST-1', partId: 'pt_1', printerId: 1, material: 'PLA', gramsActual: 100
+        });
+
+        let updated = CP.store.get('cp_printers')[0];
+        assertEqual(updated.nozzle.gramsExtruded, 1100, 'Total grams extruded increments for PLA');
+        assertEqual(updated.nozzle.abrasiveGramsExtruded, 200, 'Abrasive grams does not increment for PLA');
+
+        // Emit abrasive job completion
+        CP.bus.emit('job:completed', {
+          orderId: 'CP-TEST-2', partId: 'pt_2', printerId: 1, material: 'ABS', gramsActual: 150
+        });
+
+        updated = CP.store.get('cp_printers')[0];
+        assertEqual(updated.nozzle.gramsExtruded, 1250);
+        assertEqual(updated.nozzle.abrasiveGramsExtruded, 350, 'Abrasive grams increments for ABS');
+      });
+
+      // =======================================================================
+      // SUITE 12: stock consumption not going negative
+      // =======================================================================
+      suite('12. stock consumption safety (never negative)');
+
+      test('Consuming more grams than remaining clamps spool to 0g and marks empty', () => {
+        const spool = { id: 'SP-PLA-TEST', material: 'PLA', remainingG: 120, initialG: 1000, status: 'active' };
+        CP.store.set('cp_spools', [spool]);
+        CP.store.set('cp_ledger', []);
+
+        CP.inventory.consume('SP-PLA-TEST', 200, { reason: 'print' });
+
+        const updated = CP.store.get('cp_spools')[0];
+        assertEqual(updated.remainingG, 0, 'Remaining grams clamped to 0');
+        assertEqual(updated.status, 'empty', 'Spool status updated to empty');
+        assert(updated.remainingG >= 0, 'Remaining grams is never negative');
+      });
+
+      // =======================================================================
+      // SUITE 13: marginReport
+      // =======================================================================
+      suite('13. marginReport');
+
+      test('Computes cost, margin per gram, margin % and belowTarget flag', () => {
+        CP.store.set('cp_settings', {
+          materials: ['PLA'],
+          pricing: { ratePerGram: { PLA: 4 }, minMarginPct: 50 }
+        });
+        CP.store.set('cp_supplier_prices', [
+          { material: 'PLA', pricePerKg: 1000 } // ₹1.00 / g
+        ]);
+
+        const report = CP.inventory.marginReport();
+        assert(Array.isArray(report), 'Returns an array of reports');
+        const plaReport = report.find(r => r.material === 'PLA');
+        assert(plaReport, 'PLA report exists');
+        assertEqual(plaReport.sellingRatePerG, 4);
+        assertEqual(plaReport.costPerG, 1);
+        assertEqual(plaReport.marginPerG, 3);
+        assertEqual(plaReport.marginPct, 75, 'Margin is 75%');
+        assertEqual(plaReport.belowTarget, false, '75% is not below 50% target');
+      });
+
+      // =======================================================================
+      // Execution & UI Rendering
+      // =======================================================================
+      let totalCount = 0;
+      let passCount = 0;
+      let failCount = 0;
+      const resultsContainer = document.getElementById('test-results');
+
+      suites.forEach(s => {
+        const suiteEl = document.createElement('div');
+        suiteEl.className = 'test-suite';
+
+        let suitePassed = 0;
+        let suiteTotal = s.tests.length;
+
+        const headerEl = document.createElement('div');
+        headerEl.className = 'suite-header';
+
+        const listEl = document.createElement('ul');
+        listEl.className = 'test-list';
+
+        s.tests.forEach(t => {
+          totalCount++;
+          let pass = true;
+          let errMsg = '';
+
+          try {
+            t.fn();
+            passCount++;
+            suitePassed++;
+          } catch (err) {
+            pass = false;
+            failCount++;
+            errMsg = err.message || String(err);
+          }
+
+          const itemEl = document.createElement('li');
+          itemEl.className = 'test-item';
+          itemEl.innerHTML = `
+            <span class="badge-icon ${pass ? 'badge-pass' : 'badge-fail'}">${pass ? 'PASS' : 'FAIL'}</span>
+            <div class="test-desc">
+              <div>${t.name}</div>
+              ${!pass ? `<div class="test-err">${errMsg}</div>` : ''}
+            </div>
+          `;
+          listEl.appendChild(itemEl);
+        });
+
+        headerEl.innerHTML = `
+          <span>${s.name}</span>
+          <span style="font-size: 12px; font-family: var(--font-mono); color: var(--text-muted);">${suitePassed}/${suiteTotal} Passed</span>
+        `;
+
+        suiteEl.appendChild(headerEl);
+        suiteEl.appendChild(listEl);
+        resultsContainer.appendChild(suiteEl);
+      });
+
+      document.getElementById('total-tests').textContent = String(totalCount);
+      document.getElementById('passed-tests').textContent = String(passCount);
+      document.getElementById('failed-tests').textContent = String(failCount);
+
+      const statusEl = document.getElementById('overall-status');
+      if (failCount === 0) {
+        statusEl.className = 'status-badge all-passed';
+        statusEl.textContent = 'All Tests Passed ✓';
+      } else {
+        statusEl.className = 'status-badge has-failed';
+        statusEl.textContent = `${failCount} Failed ✗`;
+      }
+    })();
+  </script>
+</body>
+</html>

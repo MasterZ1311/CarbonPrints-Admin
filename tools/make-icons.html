@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CarbonPrints Icon Generator (PWA App Icons)</title>
+  <style>
+    :root {
+      --brand: #0f766e;
+      --brand-dark: #115e59;
+      --accent: #0d9488;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      margin: 0;
+    }
+    .container {
+      max-width: 720px;
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+    h1 {
+      font-size: 24px;
+      color: var(--brand);
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+    p {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+    .preview-grid {
+      display: flex;
+      gap: 32px;
+      justify-content: center;
+      align-items: flex-end;
+      margin-bottom: 32px;
+      padding: 24px;
+      background: #f1f5f9;
+      border-radius: 8px;
+      flex-wrap: wrap;
+    }
+    .preview-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .preview-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    canvas {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      border-radius: 18px;
+    }
+    .btn-row {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    button {
+      background: var(--brand);
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    button:hover {
+      background: var(--brand-dark);
+    }
+    .note {
+      margin-top: 24px;
+      font-size: 12px;
+      color: var(--text-muted);
+      border-left: 3px solid var(--brand);
+      padding-left: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎨 CarbonPrints PWA Icon Generator</h1>
+    <p>
+      Generates offline PWA application icons for <strong>CarbonPrints Company OS</strong>.
+      This tool runs completely client-side via <code>file://</code> or local HTTP, drawing the stacked-layer 3D mark and brand typography directly onto HTML5 Canvases.
+    </p>
+
+    <div class="preview-grid">
+      <div class="preview-card">
+        <canvas id="canvas-192" width="192" height="192"></canvas>
+        <span class="preview-label">192 &times; 192 PNG</span>
+        <button id="btn-dl-192">📥 Download icon-192.png</button>
+      </div>
+
+      <div class="preview-card">
+        <canvas id="canvas-512" width="512" height="512" style="max-width: 256px; max-height: 256px;"></canvas>
+        <span class="preview-label">512 &times; 512 PNG</span>
+        <button id="btn-dl-512">📥 Download icon-512.png</button>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button id="btn-dl-both" style="background: #0d9488;">📦 Download Both Icons</button>
+    </div>
+
+    <div class="note">
+      Save the downloaded files into the <code>icons/</code> directory of your CarbonPrints repository:
+      <br>• <code>icons/icon-192.png</code>
+      <br>• <code>icons/icon-512.png</code>
+    </div>
+  </div>
+
+  <script>
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, size, size);
+
+      // 1. Draw rounded square background with smooth deep teal gradient
+      const r = size * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(r, 0);
+      ctx.lineTo(size - r, 0);
+      ctx.quadraticCurveTo(size, 0, size, r);
+      ctx.lineTo(size, size - r);
+      ctx.quadraticCurveTo(size, size, size - r, size);
+      ctx.lineTo(r, size);
+      ctx.quadraticCurveTo(0, size, 0, size - r);
+      ctx.lineTo(0, r);
+      ctx.quadraticCurveTo(0, 0, r, 0);
+      ctx.closePath();
+
+      const grad = ctx.createLinearGradient(0, 0, size, size);
+      grad.addColorStop(0, '#0f766e'); // Deep Teal
+      grad.addColorStop(1, '#0d9488'); // Accent Teal
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // 2. Draw 3 stacked 3D-printing layers mark at the top
+      const layerCount = 3;
+      const layerH = Math.max(4, size * 0.04);
+      const layerGap = Math.max(3, size * 0.02);
+      const startY = size * 0.22;
+      const baseW = size * 0.52;
+
+      for (let i = 0; i < layerCount; i++) {
+        const curW = baseW - (layerCount - 1 - i) * (size * 0.06);
+        const curX = (size - curW) / 2;
+        const curY = startY + i * (layerH + layerGap);
+        const radius = layerH / 2;
+
+        ctx.beginPath();
+        ctx.moveTo(curX + radius, curY);
+        ctx.lineTo(curX + curW - radius, curY);
+        ctx.quadraticCurveTo(curX + curW, curY, curX + curW, curY + radius);
+        ctx.lineTo(curX + curW, curY + layerH - radius);
+        ctx.quadraticCurveTo(curX + curW, curY + layerH, curX + curW - radius, curY + layerH);
+        ctx.lineTo(curX + radius, curY + layerH);
+        ctx.quadraticCurveTo(curX, curY + layerH, curX, curY + layerH - radius);
+        ctx.lineTo(curX, curY + radius);
+        ctx.quadraticCurveTo(curX, curY, curX + radius, curY);
+        ctx.closePath();
+
+        ctx.fillStyle = i === 2 ? '#ffffff' : '#ccfbf1';
+        ctx.fill();
+      }
+
+      // 3. Draw bold 'CP' letters
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const fontSize = Math.round(size * 0.38);
+      ctx.font = `900 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`;
+      
+      // Shadow for subtle depth
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+      ctx.shadowBlur = Math.round(size * 0.04);
+      ctx.shadowOffsetY = Math.round(size * 0.02);
+      
+      ctx.fillText('CP', size / 2, size * 0.64);
+
+      // Reset shadow
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+    }
+
+    function downloadCanvas(canvas, filename) {
+      canvas.toBlob(function (blob) {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, 'image/png');
+    }
+
+    const c192 = document.getElementById('canvas-192');
+    const c512 = document.getElementById('canvas-512');
+
+    drawIcon(c192, 192);
+    drawIcon(c512, 512);
+
+    document.getElementById('btn-dl-192').addEventListener('click', () => downloadCanvas(c192, 'icon-192.png'));
+    document.getElementById('btn-dl-512').addEventListener('click', () => downloadCanvas(c512, 'icon-512.png'));
+    document.getElementById('btn-dl-both').addEventListener('click', () => {
+      downloadCanvas(c192, 'icon-192.png');
+      setTimeout(() => downloadCanvas(c512, 'icon-512.png'), 300);
+    });
+  </script>
+</body>
+</html>

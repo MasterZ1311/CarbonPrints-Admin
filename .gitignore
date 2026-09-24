@@ -1,6 +1,29 @@
-# Development scratch & temporary backups
-_git_staging_backup/
-scratch/
-*.log
+# ==============================================================================
+# CarbonPrints Company OS - .gitignore
+# Prevents customer data, backup archives, and OS clutter from entering Git
+# ==============================================================================
+
+# Database backups & snapshots (contain sensitive customer details, phones, pricing)
+carbonprints-backup-*.json
+carbonprints-pre-restore-safety-backup-*.json
+*backup*.json
+*.json.bak
+
+# Accounting & operational CSV exports
+*.csv
+carbonprints-*.csv
+
+# Operating System temporary files
 .DS_Store
 Thumbs.db
+desktop.ini
+*.tmp
+
+# Development scratch files and logs
+scratch/
+_git_staging_backup/
+*.log
+
+# Editor configurations
+.vscode/
+.idea/
