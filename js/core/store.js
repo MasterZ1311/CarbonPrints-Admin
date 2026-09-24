@@ -1,12 +1,15 @@
 /**
  * CarbonPrints Company OS - Persistence Store
  * Global namespace: window.CP.store
- * Wraps localStorage with reactive subscriptions, quota error handling, and migrations.
+ * Wraps localStorage with reactive subscriptions, quota error handling, migrations,
+ * corrupted JSON recovery with toast warning, and in-memory sandboxing (useMemory).
  */
 window.CP = window.CP || {};
 
 CP.store = (function () {
   const subscribers = new Map();
+  let isMemoryMode = false;
+  const memStore = new Map();
 
   /**
    * Helper to perform a deep merge of nested objects.
@@ -50,32 +53,82 @@ CP.store = (function () {
     }
   }
 
+  function notifyCorrupted(key) {
+    const msg = `Data error: Storage for "${key}" was corrupted. Recovered using fallback.`;
+    if (typeof window !== 'undefined' && window.CP && window.CP.ui && typeof window.CP.ui.toast === 'function' && document.getElementById('toast-container')) {
+      window.CP.ui.toast(msg, 'warning');
+    } else if (typeof window !== 'undefined') {
+      window.addEventListener('DOMContentLoaded', () => {
+        if (window.CP && window.CP.ui && typeof window.CP.ui.toast === 'function') {
+          window.CP.ui.toast(msg, 'warning');
+        }
+      }, { once: true });
+    }
+  }
+
   return {
     deepMerge,
 
     /**
-     * Retrieves an item from localStorage and parses JSON.
+     * Toggles in-memory sandboxing mode. When enabled, all get/set/remove
+     * operations operate on an isolated in-memory Map without touching localStorage.
+     * @param {boolean} [enable=true]
+     */
+    useMemory(enable = true) {
+      isMemoryMode = !!enable;
+      if (isMemoryMode) {
+        memStore.clear();
+      }
+    },
+
+    /**
+     * Returns true if currently operating in in-memory sandboxed mode.
+     * @returns {boolean}
+     */
+    isMemory() {
+      return isMemoryMode;
+    },
+
+    /**
+     * Retrieves an item from storage and parses JSON.
+     * In case of corrupted JSON, catches error, notifies user via toast, and returns fallback.
      * @param {string} key - localStorage key
      * @param {any} fallback - Fallback if key does not exist or parse fails
      * @returns {any}
      */
     get(key, fallback = null) {
+      if (isMemoryMode) {
+        if (!memStore.has(key)) return fallback;
+        try {
+          return JSON.parse(JSON.stringify(memStore.get(key)));
+        } catch (e) {
+          return memStore.get(key);
+        }
+      }
+
       try {
         const raw = localStorage.getItem(key);
         if (raw === null || raw === undefined) return fallback;
         return JSON.parse(raw);
       } catch (err) {
-        console.warn(`[CP.store] Failed to parse key "${key}":`, err);
+        console.warn(`[CP.store] Corrupted JSON detected for key "${key}":`, err);
+        notifyCorrupted(key);
         return fallback;
       }
     },
 
     /**
-     * Stores an item as JSON in localStorage.
+     * Stores an item as JSON in storage.
      * @param {string} key - localStorage key
      * @param {any} value - Value to persist
      */
     set(key, value) {
+      if (isMemoryMode) {
+        memStore.set(key, JSON.parse(JSON.stringify(value)));
+        notify(key, value);
+        return;
+      }
+
       try {
         const raw = JSON.stringify(value);
         localStorage.setItem(key, raw);
@@ -103,10 +156,16 @@ CP.store = (function () {
     },
 
     /**
-     * Removes an item from localStorage.
+     * Removes an item from storage.
      * @param {string} key - localStorage key
      */
     remove(key) {
+      if (isMemoryMode) {
+        memStore.delete(key);
+        notify(key, null);
+        return;
+      }
+
       try {
         localStorage.removeItem(key);
         notify(key, null);
@@ -117,7 +176,7 @@ CP.store = (function () {
 
     /**
      * Subscribes to changes for a specific key.
-     * @param {string} key - localStorage key
+     * @param {string} key - storage key
      * @param {Function} fn - Callback receiving new value
      * @returns {Function} Unsubscribe function
      */
@@ -142,6 +201,15 @@ CP.store = (function () {
      */
     exportAll() {
       const dump = {};
+      if (isMemoryMode) {
+        for (const [k, v] of memStore.entries()) {
+          if (k.startsWith('cp_')) {
+            dump[k] = JSON.parse(JSON.stringify(v));
+          }
+        }
+        return dump;
+      }
+
       try {
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
@@ -156,12 +224,28 @@ CP.store = (function () {
     },
 
     /**
-     * Imports a data dump into localStorage.
+     * Imports a data dump into storage.
      * @param {Object} obj - Object containing cp_* keys
      * @param {"replace"|"merge"} mode - Import mode
      */
     importAll(obj, mode = 'replace') {
       if (!obj || typeof obj !== 'object') return;
+
+      if (isMemoryMode) {
+        if (mode === 'replace') {
+          const toDelete = [];
+          for (const k of memStore.keys()) {
+            if (k.startsWith('cp_')) toDelete.push(k);
+          }
+          toDelete.forEach(k => memStore.delete(k));
+        }
+        for (const [k, v] of Object.entries(obj)) {
+          if (k.startsWith('cp_')) {
+            CP.store.set(k, v);
+          }
+        }
+        return;
+      }
 
       if (mode === 'replace') {
         const toDelete = [];
@@ -182,17 +266,27 @@ CP.store = (function () {
     },
 
     /**
-     * Estimates the current localStorage byte usage for cp_ keys.
+     * Estimates the current storage byte usage for cp_ keys.
      * @returns {number} Approximate bytes used
      */
     usage() {
       let bytes = 0;
+      if (isMemoryMode) {
+        for (const [k, v] of memStore.entries()) {
+          if (k.startsWith('cp_')) {
+            const val = JSON.stringify(v) || '';
+            bytes += (k.length + val.length) * 2;
+          }
+        }
+        return bytes;
+      }
+
       try {
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
           if (k && k.startsWith('cp_')) {
             const val = localStorage.getItem(k) || '';
-            bytes += (k.length + val.length) * 2; // UTF-16 character = 2 bytes
+            bytes += (k.length + val.length) * 2;
           }
         }
       } catch (err) {
@@ -212,7 +306,6 @@ CP.store = (function () {
       if (!existingSettings) {
         CP.store.set('cp_settings', defs.settings || {});
       } else {
-        // Deep merge to ensure future keys in defaults are present
         const mergedSettings = deepMerge(defs.settings || {}, existingSettings);
         CP.store.set('cp_settings', mergedSettings);
       }

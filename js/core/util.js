@@ -162,6 +162,16 @@ CP.util = {
    * @returns {string}
    */
   fyLabel(dateInput) {
+    if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateInput)) {
+      const parts = dateInput.split('-');
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10); // 1-indexed
+      if (m >= 4) {
+        return `${String(y).slice(-2)}-${String(y + 1).slice(-2)}`;
+      } else {
+        return `${String(y - 1).slice(-2)}-${String(y).slice(-2)}`;
+      }
+    }
     const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
     if (isNaN(d.getTime())) return '';
 
@@ -229,19 +239,34 @@ CP.util = {
   },
 
   /**
+   * Checks whether a measured dimension is within tolerance of nominal value.
+   * @param {number} nominal - Target dimension in mm
+   * @param {number} measured - Actual measured dimension in mm
+   * @param {number} [tol=0.2] - Allowed tolerance in mm (+/-)
+   * @returns {boolean}
+   */
+  isDimensionOk(nominal, measured, tol = 0.2) {
+    if (nominal === undefined || measured === undefined || isNaN(nominal) || isNaN(measured)) return false;
+    return Math.abs(measured - nominal) <= (Number(tol) + 0.00001);
+  },
+
+  /**
    * Increments the appropriate cp_counters and returns the formatted ID.
+   * Supports optional dateInput for financial year boundary testing.
    * - order -> "CP-2026-0001" (calendar-year counter)
    * - invoice -> "CP/26-27/0001" (financial-year counter)
    * - challan -> "DC/26-27/0001" (financial-year counter)
    * @param {"order"|"invoice"|"challan"|string} kind - Kind of ID
+   * @param {Date|string} [dateInput=new Date()] - Optional date reference
    * @returns {string}
    */
-  nextId(kind) {
-    const now = new Date();
+  nextId(kind, dateInput = new Date()) {
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    const validD = isNaN(d.getTime()) ? new Date() : d;
     const istOffset = 5.5 * 60 * 60 * 1000;
-    const ist = new Date(now.getTime() + (now.getTimezoneOffset() * 60 * 1000) + istOffset);
+    const ist = new Date(validD.getTime() + (validD.getTimezoneOffset() * 60 * 1000) + istOffset);
     const year = ist.getFullYear();
-    const fy = CP.util.fyLabel(ist);
+    const fy = CP.util.fyLabel(validD);
 
     let counterKey = '';
     let prefix = '';
@@ -265,7 +290,17 @@ CP.util = {
       : {};
 
     const currentVal = Number(counters[counterKey]) || 0;
-    const nextVal = currentVal + 1;
+    let nextVal = currentVal + 1;
+
+    // Guard against duplicate IDs if data was imported
+    if (kind === 'order' && CP.store && typeof CP.store.get === 'function') {
+      const existingOrders = CP.store.get('cp_orders', []) || [];
+      const existingIds = new Set(existingOrders.map(o => o && o.id).filter(Boolean));
+      while (existingIds.has(`${prefix}${CP.util.pad(nextVal, 4)}`)) {
+        nextVal++;
+      }
+    }
+
     counters[counterKey] = nextVal;
 
     if (CP.store && typeof CP.store.set === 'function') {

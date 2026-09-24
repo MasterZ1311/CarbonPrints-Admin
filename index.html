@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CarbonPrints Company OS</title>
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/print.css" media="print">
 </head>
@@ -58,7 +62,13 @@
         </a>
       </nav>
       <div class="sidebar-footer">
-        <span class="app-version">v0.1.0 • Chennai</span>
+        <div class="footer-status-row">
+          <span class="app-version">v0.1.0 • Chennai</span>
+          <span id="connection-status" class="connection-status" title="Network status">
+            <span class="status-dot"></span>
+            <span class="status-text">Online</span>
+          </span>
+        </div>
       </div>
     </aside>
 

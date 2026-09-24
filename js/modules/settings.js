@@ -1,7 +1,8 @@
 /**
  * CarbonPrints Company OS - Settings Module
  * Global namespace: window.CP
- * Full implementation managing business profile, materials, pricing, and production config.
+ * Full implementation managing business profile, materials, pricing, production config,
+ * and optional read-only OctoPrint workshop printer connections.
  */
 window.CP = window.CP || {};
 
@@ -12,6 +13,24 @@ CP.registerModule((function () {
   function loadSettings() {
     const raw = CP.store.get('cp_settings', CP.defaults ? CP.defaults.settings : {});
     return JSON.parse(JSON.stringify(raw));
+  }
+
+  function loadPrinters() {
+    let list = CP.store.get('cp_printers', null);
+    if (!list || !Array.isArray(list) || list.length === 0) {
+      list = CP.defaults ? JSON.parse(JSON.stringify(CP.defaults.printers)) : [];
+      if (list.length === 0) {
+        for (let i = 1; i <= 10; i++) {
+          list.push({
+            id: i, name: `Printer ${String(i).padStart(2, '0')}`, model: 'Ender 3',
+            status: 'idle', statusNote: '', material: 'PLA', currentJob: null,
+            nozzle: { type: 'brass', installedAt: new Date().toISOString(), gramsExtruded: 0, abrasiveGramsExtruded: 0 },
+            octoprint: { url: '', apiKey: '' }
+          });
+        }
+      }
+    }
+    return list;
   }
 
   function validate(settings) {
@@ -26,25 +45,19 @@ CP.registerModule((function () {
       if (isNaN(rate) || rate < 0) errors.push(`Rate per gram for "${mat}" cannot be negative.`);
     });
 
-    ['0.28', '0.20', '0.12'].forEach(layer => {
-      const mult = Number(settings.pricing.layerMultiplier[layer]);
-      if (isNaN(mult) || mult <= 0) errors.push(`Layer multiplier for ${layer}mm must be greater than 0.`);
+    ['0.28', '0.20', '0.12'].forEach(l => {
+      if (isNaN(Number(settings.pricing.layerMultiplier[l])) || Number(settings.pricing.layerMultiplier[l]) <= 0) errors.push(`Layer multiplier for ${l}mm must be > 0.`);
     });
 
     for (const [cat, disc] of Object.entries(settings.pricing.categoryDiscountPct || {})) {
       if (disc < 0 || disc > 100) errors.push(`Discount for "${cat}" must be 0% to 100%.`);
     }
 
-    if (settings.production.printHoursPerDay < 1 || settings.production.printHoursPerDay > 24) {
-      errors.push('Print hours per day must be between 1 and 24.');
-    }
+    if (settings.production.printHoursPerDay < 1 || settings.production.printHoursPerDay > 24) errors.push('Print hours per day must be between 1 and 24.');
     if (settings.production.lowStockThresholdG < 0) errors.push('Low stock threshold cannot be negative.');
-    if (settings.production.scrapTargetPct < 0 || settings.production.scrapTargetPct > 100) {
-      errors.push('Scrap target percentage must be 0% to 100%.');
-    }
+    if (settings.production.scrapTargetPct < 0 || settings.production.scrapTargetPct > 100) errors.push('Scrap target percentage must be 0% to 100%.');
     if (settings.production.toleranceMm < 0) errors.push('Dimensional tolerance cannot be negative.');
     if (settings.production.nozzleLifeLimitG <= 0) errors.push('Nozzle life limit must be greater than 0g.');
-
     return errors;
   }
 
@@ -215,6 +228,72 @@ CP.registerModule((function () {
     `;
   }
 
+  function renderConnectionsTab() {
+    const printers = loadPrinters();
+
+    const printerRows = printers.map(p => `
+      <div class="octo-printer-row" data-printer-id="${p.id}">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div>
+            <strong style="font-size: 14px;">${CP.util.esc(p.name)}</strong>
+            <span style="color: var(--text-muted); font-size: 12px; margin-left: 6px;">(${CP.util.esc(p.model)})</span>
+          </div>
+          <span class="badge badge-status-${p.status}">${p.status.toUpperCase()}</span>
+        </div>
+        <div class="grid grid-cols-2" style="gap: 12px;">
+          <div class="field" style="margin-bottom: 0;">
+            <label for="octo-url-${p.id}">OctoPrint Base URL</label>
+            <input type="text" id="octo-url-${p.id}" class="input octo-url-input" placeholder="e.g. http://192.168.1.50:5000" value="${CP.util.esc(p.octoprint?.url || '')}">
+          </div>
+          <div class="field" style="margin-bottom: 0;">
+            <label for="octo-key-${p.id}">API Key (Optional)</label>
+            <input type="text" id="octo-key-${p.id}" class="input octo-key-input" placeholder="OctoPrint User API Key" value="${CP.util.esc(p.octoprint?.apiKey || '')}">
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+          <button type="button" class="btn btn-secondary btn-sm btn-test-octo" data-printer-id="${p.id}">Test Connection</button>
+          <span class="octo-test-feedback" id="octo-feedback-${p.id}" style="font-size: 12px;"></span>
+        </div>
+      </div>
+    `).join('');
+
+    return `
+      <div class="card octo-help-card" style="border-left: 4px solid var(--primary); background: var(--surface-alt);">
+        <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--text);">📡 OctoPrint Integration &amp; Workshop Network Guide</h3>
+        <p style="font-size: 13px; margin-bottom: 8px; color: var(--text);">
+          Connect local OctoPrint instances running on Raspberry Pis or old Android phones to monitor bed/nozzle temperatures, live print progress, and automatically detect finished prints on the Farm Board.
+        </p>
+        <div style="font-size: 12px; line-height: 1.6; color: var(--text-muted); display: flex; flex-direction: column; gap: 6px;">
+          <div>
+            <strong>1. Enable CORS in OctoPrint:</strong> In the OctoPrint web interface, navigate to <em>Settings (wrench icon) &gt; API &gt; Enable "Allow Cross Origin Resource Sharing (CORS)"</em>. Save and restart OctoPrint.
+          </div>
+          <div>
+            <strong>2. HTTPS Mixed Content Notice:</strong> Browsers strictly block unencrypted HTTP network calls when an application is hosted on an HTTPS origin (e.g. GitHub Pages). Real-time telemetry works when opening CarbonPrints OS locally on the workshop LAN (via <code>http://localhost:8080</code> or <code>file:///...</code>).
+          </div>
+          <div>
+            <strong>3. Security Notice:</strong> API keys are stored unencrypted in this browser's localStorage. Use only on trusted workshop computers.
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Printer Connections (Printer 01 &ndash; 10)</h3>
+            <div class="card-subtitle">Configure optional read-only OctoPrint addresses and credentials for each machine</div>
+          </div>
+        </div>
+        <div class="banner banner-warning" style="margin-bottom: 16px; font-size: 12px;">
+          🔒 <strong>Security Warning:</strong> API keys are stored unencrypted in this browser. Use only on a trusted computer.
+        </div>
+        <div class="octo-printers-table">${printerRows}</div>
+        <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+          <button type="button" id="btn-save-connections" class="btn btn-primary">Save Printer Connections</button>
+        </div>
+      </div>
+    `;
+  }
+
   function renderDevTab() {
     const usageBytes = CP.store.usage();
     const usageKB = (usageBytes / 1024).toFixed(2);
@@ -264,7 +343,6 @@ CP.registerModule((function () {
       s.business.upiName = (document.getElementById('cfg-biz-upi-name')?.value || '').trim();
       s.business.footerNote = (document.getElementById('cfg-biz-footer')?.value || '').trim();
     }
-
     const gstCheck = document.getElementById('cfg-gst-enabled');
     if (gstCheck) {
       s.pricing.gstEnabled = gstCheck.checked;
@@ -277,17 +355,10 @@ CP.registerModule((function () {
         "0.12": Number(document.getElementById('cfg-layer-012')?.value) || 1
       };
       s.pricing.ratePerGram = s.pricing.ratePerGram || {};
-      document.querySelectorAll('.cfg-rate-input').forEach(inp => {
-        const mat = inp.getAttribute('data-mat');
-        if (mat) s.pricing.ratePerGram[mat] = Number(inp.value) || 0;
-      });
+      document.querySelectorAll('.cfg-rate-input').forEach(inp => { const m = inp.getAttribute('data-mat'); if (m) s.pricing.ratePerGram[m] = Number(inp.value) || 0; });
       s.pricing.categoryDiscountPct = s.pricing.categoryDiscountPct || {};
-      document.querySelectorAll('.cfg-cat-input').forEach(inp => {
-        const cat = inp.getAttribute('data-cat');
-        if (cat) s.pricing.categoryDiscountPct[cat] = Number(inp.value) || 0;
-      });
+      document.querySelectorAll('.cfg-cat-input').forEach(inp => { const c = inp.getAttribute('data-cat'); if (c) s.pricing.categoryDiscountPct[c] = Number(inp.value) || 0; });
     }
-
     const gph028 = document.getElementById('cfg-gph-028');
     if (gph028) {
       s.production.gramsPerHour = {
@@ -301,13 +372,27 @@ CP.registerModule((function () {
       s.production.scrapTargetPct = Number(document.getElementById('cfg-scrap-target')?.value) || 5;
       s.production.toleranceMm = Number(document.getElementById('cfg-tolerance')?.value) || 0.2;
       s.production.nozzleLifeLimitG = Number(document.getElementById('cfg-nozzle-life')?.value) || 5000;
-
       const abrasive = [];
-      document.querySelectorAll('.cfg-abrasive-cb:checked').forEach(cb => {
-        const mat = cb.getAttribute('data-mat');
-        if (mat) abrasive.push(mat);
-      });
+      document.querySelectorAll('.cfg-abrasive-cb:checked').forEach(cb => { const m = cb.getAttribute('data-mat'); if (m) abrasive.push(m); });
       s.production.abrasiveMaterials = abrasive;
+    }
+  }
+
+  function saveConnectionsFromDOM(rootElement) {
+    const prs = loadPrinters();
+    let changed = false;
+    prs.forEach(p => {
+      const urlInp = rootElement.querySelector(`#octo-url-${p.id}`);
+      const keyInp = rootElement.querySelector(`#octo-key-${p.id}`);
+      if (urlInp) {
+        p.octoprint = p.octoprint || {};
+        p.octoprint.url = urlInp.value.trim();
+        p.octoprint.apiKey = (keyInp?.value || '').trim();
+        changed = true;
+      }
+    });
+    if (changed) {
+      CP.store.set('cp_printers', prs);
     }
   }
 
@@ -315,6 +400,7 @@ CP.registerModule((function () {
     rootElement.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         readFormInputs(tempSettings);
+        if (activeTab === 'connections') saveConnectionsFromDOM(rootElement);
         activeTab = e.target.getAttribute('data-tab');
         renderFull(rootElement);
       });
@@ -363,6 +449,7 @@ CP.registerModule((function () {
     if (saveBtn) {
       saveBtn.addEventListener('click', () => {
         readFormInputs(tempSettings);
+        saveConnectionsFromDOM(rootElement);
         const errors = validate(tempSettings);
         if (errors.length > 0) {
           CP.ui.toast(errors[0], 'danger');
@@ -372,6 +459,50 @@ CP.registerModule((function () {
         CP.ui.toast('Settings saved successfully!', 'success');
       });
     }
+
+    const saveConnBtn = rootElement.querySelector('#btn-save-connections');
+    if (saveConnBtn) {
+      saveConnBtn.addEventListener('click', () => {
+        saveConnectionsFromDOM(rootElement);
+        CP.ui.toast('Printer connections saved successfully!', 'success');
+      });
+    }
+
+    rootElement.querySelectorAll('.btn-test-octo').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const printerId = Number(btn.getAttribute('data-printer-id'));
+        const urlInp = rootElement.querySelector(`#octo-url-${printerId}`);
+        const keyInp = rootElement.querySelector(`#octo-key-${printerId}`);
+        const fb = rootElement.querySelector(`#octo-feedback-${printerId}`);
+        if (!urlInp || !fb) return;
+
+        const url = urlInp.value.trim();
+        const apiKey = (keyInp?.value || '').trim();
+
+        if (!url) {
+          fb.className = 'octo-test-feedback is-error';
+          fb.textContent = 'Please enter an OctoPrint base URL first.';
+          return;
+        }
+
+        fb.className = 'octo-test-feedback is-testing';
+        fb.textContent = 'Testing connection (5s timeout)...';
+        btn.disabled = true;
+
+        const res = await CP.octo.testConnection({ url, apiKey });
+        btn.disabled = false;
+
+        if (res.online) {
+          fb.className = 'octo-test-feedback is-success';
+          const bed = res.bedTemp != null ? `${res.bedTemp}°C` : '--';
+          const tool = res.toolTemp != null ? `${res.toolTemp}°C` : '--';
+          fb.textContent = `🟢 Connected! State: ${res.state} (Bed: ${bed}, Tool: ${tool})`;
+        } else {
+          fb.className = 'octo-test-feedback is-error';
+          fb.textContent = `🔴 ${res.error}`;
+        }
+      });
+    });
 
     const resetDefaultsBtn = rootElement.querySelector('#btn-reset-settings-defaults');
     if (resetDefaultsBtn) {
@@ -399,13 +530,14 @@ CP.registerModule((function () {
     if (activeTab === 'business') tabContent = renderBusinessTab(tempSettings);
     else if (activeTab === 'pricing') tabContent = renderPricingTab(tempSettings);
     else if (activeTab === 'production') tabContent = renderProductionTab(tempSettings);
+    else if (activeTab === 'connections') tabContent = renderConnectionsTab();
     else if (activeTab === 'dev') tabContent = renderDevTab();
 
     rootElement.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
         <div>
           <h2 style="font-size: 20px; font-weight: 700; color: var(--text);">⚙️ System Settings &amp; Configuration</h2>
-          <div style="color: var(--text-muted); font-size: 13px;">Manage company profile, rates, print heuristics, and local storage</div>
+          <div style="color: var(--text-muted); font-size: 13px;">Manage company profile, rates, print heuristics, printer connections, and local storage</div>
         </div>
         <div style="display: flex; gap: 8px;">
           <button type="button" id="btn-reset-settings-defaults" class="btn btn-secondary">Reset to Defaults</button>
@@ -416,6 +548,7 @@ CP.registerModule((function () {
         <button type="button" class="tab-btn ${activeTab === 'business' ? 'active' : ''}" data-tab="business">Business Profile</button>
         <button type="button" class="tab-btn ${activeTab === 'pricing' ? 'active' : ''}" data-tab="pricing">Materials &amp; Pricing</button>
         <button type="button" class="tab-btn ${activeTab === 'production' ? 'active' : ''}" data-tab="production">Production &amp; Farm</button>
+        <button type="button" class="tab-btn ${activeTab === 'connections' ? 'active' : ''}" data-tab="connections">Printer Connections</button>
         <button type="button" class="tab-btn ${activeTab === 'dev' ? 'active' : ''}" data-tab="dev">Diagnostics &amp; Dev</button>
       </div>
       <div class="tab-panel">${tabContent}</div>

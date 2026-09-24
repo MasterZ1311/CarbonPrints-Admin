@@ -64,18 +64,38 @@ CP.ui = (function () {
   }
 
   /**
-   * Opens an accessible modal dialog.
+   * Opens an accessible modal dialog with focus trap and keyboard support.
+   * Supports both { title, bodyHTML, buttons } and { title, body, confirmText, cancelText, onConfirm, onCancel }.
    * @param {Object} options
-   * @param {string} options.title - Modal title
-   * @param {string} [options.bodyHTML] - Modal body HTML
-   * @param {HTMLElement} [options.bodyNode] - Modal body DOM node
-   * @param {Array<{ label: string, kind?: string, onClick: Function }>} [options.buttons]
    * @returns {{ close: Function }}
    */
-  function modal({ title, bodyHTML, bodyNode, buttons = [] }) {
+  function modal(options = {}) {
+    const { title, bodyNode } = options;
+    const bodyHTML = options.bodyHTML || options.body || '';
+    let buttons = Array.isArray(options.buttons) ? [...options.buttons] : [];
+
+    // Fallback support for confirmText / cancelText / onConfirm / onCancel options
+    if (buttons.length === 0) {
+      if (options.cancelText) {
+        buttons.push({
+          label: options.cancelText,
+          kind: 'btn-secondary',
+          onClick: options.onCancel
+        });
+      }
+      if (options.confirmText) {
+        buttons.push({
+          label: options.confirmText,
+          kind: options.confirmKind || 'btn-primary',
+          onClick: options.onConfirm
+        });
+      }
+    }
+
     const container = document.getElementById('modal-container');
     if (!container) return { close: () => {} };
 
+    const prevActive = document.activeElement;
     container.innerHTML = '';
     container.setAttribute('aria-hidden', 'false');
 
@@ -123,11 +143,39 @@ CP.ui = (function () {
       container.removeEventListener('click', onBackdropClick);
       container.innerHTML = '';
       container.setAttribute('aria-hidden', 'true');
+      if (prevActive && typeof prevActive.focus === 'function') {
+        try { prevActive.focus(); } catch (e) {}
+      }
     }
 
     function onKeyDown(e) {
       if (e.key === 'Escape') {
+        e.preventDefault();
         close();
+        return;
+      }
+      if (e.key === 'Tab') {
+        const focusable = dialog.querySelectorAll(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || !dialog.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last || !dialog.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     }
 
@@ -166,7 +214,7 @@ CP.ui = (function () {
 
     // Focus first actionable element
     setTimeout(() => {
-      const focusable = dialog.querySelector('input, button.btn-primary, button:not(.modal-close)');
+      const focusable = dialog.querySelector('input, select, textarea, button.btn-primary, button:not(.modal-close)');
       if (focusable) focusable.focus();
     }, 50);
 
@@ -267,20 +315,44 @@ CP.ui = (function () {
     `;
   }
 
+  const activeAlerts = new Map();
+
   /**
    * Renders global alert banners into #global-alerts.
-   * @param {Array<{ id: string, kind: "info"|"warning"|"danger"|"success", html: string }>} alerts
+   * Merges by alert ID so alerts from different modules do not overwrite each other.
+   * Passing html: null/falsy or remove: true removes the alert with that id.
+   * @param {Array<{ id: string, kind?: "info"|"warning"|"danger"|"success", html?: string, remove?: boolean }>} alerts
    */
   function setAlerts(alerts = []) {
+    const list = Array.isArray(alerts) ? alerts : [alerts];
+    list.forEach(a => {
+      if (!a || !a.id) return;
+      if (a.html === null || a.html === undefined || a.remove) {
+        activeAlerts.delete(a.id);
+      } else {
+        activeAlerts.set(a.id, a);
+      }
+    });
+    renderAlerts();
+  }
+
+  function removeAlert(id) {
+    if (id) {
+      activeAlerts.delete(id);
+      renderAlerts();
+    }
+  }
+
+  function renderAlerts() {
     const container = document.getElementById('global-alerts');
     if (!container) return;
-    if (!alerts || alerts.length === 0) {
+    if (activeAlerts.size === 0) {
       container.innerHTML = '';
       return;
     }
 
-    container.innerHTML = alerts.map(a => `
-      <div class="banner banner-${CP.util.esc(a.kind || 'info')}" data-alert-id="${CP.util.esc(a.id)}">
+    container.innerHTML = Array.from(activeAlerts.values()).map(a => `
+      <div class="banner banner-${CP.util.esc(a.kind || 'info')}" id="${CP.util.esc(a.id)}" data-alert-id="${CP.util.esc(a.id)}">
         <div style="flex: 1;">${a.html}</div>
       </div>
     `).join('');
@@ -338,6 +410,7 @@ CP.ui = (function () {
     badge,
     emptyState,
     setAlerts,
+    removeAlert,
     table
   };
 })();

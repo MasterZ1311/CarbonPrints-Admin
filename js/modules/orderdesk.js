@@ -246,6 +246,17 @@ CP.registerModule((function () {
       challanNo: activeOrder.challanNo || null
     };
 
+    const paidSoFar = Number(activeOrder.payment?.paidAmount) || 0;
+    if (calc.total < paidSoFar) {
+      CP.ui.toast(`Order total (₹ ${CP.util.fmtINR(calc.total)}) cannot be less than paid amount (₹ ${CP.util.fmtINR(paidSoFar)}).`, 'danger');
+      return;
+    }
+    if (paidSoFar >= calc.total && calc.total > 0) {
+      finalizedOrder.payment.status = 'settled';
+    } else if (paidSoFar > 0) {
+      finalizedOrder.payment.status = 'advance';
+    }
+
     const orders = CP.store.get('cp_orders', []);
     const existingIdx = orders.findIndex(o => o.id === orderId);
     if (existingIdx >= 0) { orders[existingIdx] = finalizedOrder; }
@@ -343,9 +354,14 @@ CP.registerModule((function () {
         const partId = row.getAttribute('data-part-id');
         readFormData();
         if (activeOrder.parts.length <= 1) { CP.ui.toast('At least one part is required.', 'warning'); return; }
-        activeOrder.parts = activeOrder.parts.filter(p => p.id !== partId);
-        rebuildPartsTable(settings, isOrderLocked);
-        updateSummary();
+        const partToDel = activeOrder.parts.find(p => p.id === partId);
+        CP.ui.confirm(`Remove part "${partToDel?.name || 'this item'}" from the order?`).then(ok => {
+          if (ok) {
+            activeOrder.parts = activeOrder.parts.filter(p => p.id !== partId);
+            rebuildPartsTable(settings, isOrderLocked);
+            updateSummary();
+          }
+        });
       }
     });
 
@@ -554,26 +570,10 @@ if (CP.dev && typeof CP.dev.registerSeeder === 'function') {
     const existingOrders = CP.store.get('cp_orders', []);
 
     const sampleSeeds = [
-      {
-        customer: { name: 'Aravind Kumar', phone: '9840123456', email: 'aravind@aerovision.in', category: 'Hardware Startup R&D' },
-        status: 'confirmed', dueDate: CP.util.addDays(CP.util.todayISO(), 3), notes: 'Enclosure prototyping v1.4', advance: 500,
-        parts: [{ name: 'Sensor Enclosure Top', material: 'ABS', layer: '0.20', infillPct: 30, weightG: 45, qty: 2 }, { name: 'Sensor Enclosure Base', material: 'ABS', layer: '0.20', infillPct: 40, weightG: 55, qty: 2 }]
-      },
-      {
-        customer: { name: 'Pooja Sundaram', phone: '9789012345', email: 'pooja.s@annauniv.edu', category: 'College Project' },
-        status: 'quote', dueDate: CP.util.addDays(CP.util.todayISO(), 2), notes: 'Final year quadcopter arm', advance: 0,
-        parts: [{ name: 'Quadcopter Arm Mount', material: 'PLA', layer: '0.28', infillPct: 25, weightG: 65, qty: 4 }]
-      },
-      {
-        customer: { name: 'Apex Auto Dynamics', phone: '9444012345', email: 'service@apexauto.in', category: 'Automotive Garage' },
-        status: 'confirmed', dueDate: CP.util.addDays(CP.util.todayISO(), 4), notes: 'Dashboard gauge mount and intake duct', advance: 1000,
-        parts: [{ name: 'Gauge Pod Mount', material: 'ABS', layer: '0.12', infillPct: 50, weightG: 80, qty: 1 }, { name: 'Air Intake Snorkel Joint', material: 'TPU', layer: '0.20', infillPct: 100, weightG: 120, qty: 1 }]
-      },
-      {
-        customer: { name: 'Vignesh R', phone: '9884012345', email: 'vignesh.r@gmail.com', category: 'Hobbyist' },
-        status: 'quote', dueDate: CP.util.addDays(CP.util.todayISO(), 5), notes: 'Mechanical keyboard case', advance: 0,
-        parts: [{ name: '60% Keyboard Top Case', material: 'PLA', layer: '0.20', infillPct: 20, weightG: 140, qty: 1 }]
-      }
+      { customer: { name: 'Aravind Kumar', phone: '9840123456', email: 'aravind@aerovision.in', category: 'Hardware Startup R&D' }, status: 'confirmed', dueDate: CP.util.addDays(CP.util.todayISO(), 3), notes: 'Enclosure prototyping v1.4', advance: 500, parts: [{ name: 'Sensor Enclosure Top', material: 'ABS', layer: '0.20', infillPct: 30, weightG: 45, qty: 2 }, { name: 'Sensor Enclosure Base', material: 'ABS', layer: '0.20', infillPct: 40, weightG: 55, qty: 2 }] },
+      { customer: { name: 'Pooja Sundaram', phone: '9789012345', email: 'pooja.s@annauniv.edu', category: 'College Project' }, status: 'quote', dueDate: CP.util.addDays(CP.util.todayISO(), 2), notes: 'Final year quadcopter arm', advance: 0, parts: [{ name: 'Quadcopter Arm Mount', material: 'PLA', layer: '0.28', infillPct: 25, weightG: 65, qty: 4 }] },
+      { customer: { name: 'Apex Auto Dynamics', phone: '9444012345', email: 'service@apexauto.in', category: 'Automotive Garage' }, status: 'confirmed', dueDate: CP.util.addDays(CP.util.todayISO(), 4), notes: 'Dashboard gauge mount and intake duct', advance: 1000, parts: [{ name: 'Gauge Pod Mount', material: 'ABS', layer: '0.12', infillPct: 50, weightG: 80, qty: 1 }, { name: 'Air Intake Snorkel Joint', material: 'TPU', layer: '0.20', infillPct: 100, weightG: 120, qty: 1 }] },
+      { customer: { name: 'Vignesh R', phone: '9884012345', email: 'vignesh.r@gmail.com', category: 'Hobbyist' }, status: 'quote', dueDate: CP.util.addDays(CP.util.todayISO(), 5), notes: 'Mechanical keyboard case', advance: 0, parts: [{ name: '60% Keyboard Top Case', material: 'PLA', layer: '0.20', infillPct: 20, weightG: 140, qty: 1 }] }
     ];
 
     const seededOrders = [...existingOrders];
@@ -591,7 +591,6 @@ if (CP.dev && typeof CP.dev.registerSeeder === 'function') {
         status: seed.status, invoiceNo: null, challanNo: null
       });
     });
-
     CP.store.set('cp_orders', seededOrders);
   });
 }
