@@ -274,9 +274,12 @@ CP.maintenance = (function () {
 
           <div class="field" style="margin-bottom: 12px;">
             <label for="sel-editor-printer">Select Printer:</label>
-            <select class="select" id="sel-editor-printer">
-              ${printers.map(p => `<option value="${p.id}" ${p.id === Number(selectedEditorPrinterId) ? 'selected' : ''}>${CP.util.esc(p.name)} (${p.model})</option>`).join('')}
-            </select>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <select class="select" id="sel-editor-printer" style="flex: 1;">
+                ${printers.map(p => `<option value="${p.id}" ${p.id === Number(selectedEditorPrinterId) ? 'selected' : ''}>${CP.util.esc(p.name)} (${p.model})</option>`).join('')}
+              </select>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-apply-bambu-routine" title="Load official Bambu Lab maintenance routine">🎋 Apply Bambu Routine</button>
+            </div>
           </div>
 
           <div class="table-container" style="margin-bottom: 16px;">
@@ -448,6 +451,21 @@ CP.maintenance = (function () {
     root.querySelector('#sel-editor-printer')?.addEventListener('change', (e) => {
       selectedEditorPrinterId = Number(e.target.value) || 1;
       renderView();
+    });
+
+    // Tab 3: Apply Bambu routine
+    root.querySelector('#btn-apply-bambu-routine')?.addEventListener('click', async () => {
+      const printers = CP.store.get('cp_printers', []);
+      const selPr = printers.find(p => p.id === Number(selectedEditorPrinterId));
+      const pName = selPr ? selPr.name : `Printer ${selectedEditorPrinterId}`;
+      const ok = await CP.ui.confirm(`Apply Bambu Lab maintenance routine for ${pName}? This will configure 6 Bambu maintenance tasks (Carbon rod wipe, Z-lead screw lube, cutter inspection, nozzle wiper/sock, AMS gears, and air filter).`);
+      if (ok) {
+        if (CP.maint && typeof CP.maint.applyBambuRoutine === 'function') {
+          CP.maint.applyBambuRoutine(selectedEditorPrinterId);
+          CP.ui.toast(`Applied Bambu Lab maintenance routine to ${pName}!`, 'success');
+          renderView();
+        }
+      }
     });
 
     // Tab 3: Save task interval

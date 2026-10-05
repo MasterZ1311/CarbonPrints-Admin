@@ -24,6 +24,10 @@ scratch/
 _git_staging_backup/
 *.log
 
+# Python cache
+__pycache__/
+*.pyc
+
 # Editor configurations
 .vscode/
 .idea/

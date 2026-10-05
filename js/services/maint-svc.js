@@ -379,6 +379,56 @@ CP.maint = (function () {
     updateGlobalAlerts();
   }
 
+  function getBambuTaskTemplates() {
+    if (CP.defaults && Array.isArray(CP.defaults.bambuTaskTemplates)) {
+      return CP.defaults.bambuTaskTemplates;
+    }
+    return [
+      { key: "bambu_carbon_rod", label: "Carbon X-axis rod wipe (99% IPA, no lube)", intervalDays: 14 },
+      { key: "bambu_lead_screw", label: "Z-axis lead screws clean & lube", intervalDays: 30 },
+      { key: "bambu_cutter_blade", label: "Filament cutter blade inspection", intervalDays: 30 },
+      { key: "bambu_wiper_sock", label: "Nozzle wiper pad & silicone sock check", intervalDays: 7 },
+      { key: "bambu_ams_feeder", label: "AMS feeder funnel & gear inspection", intervalDays: 30 },
+      { key: "bambu_carbon_filter", label: "Activated carbon air filter check", intervalDays: 90 }
+    ];
+  }
+
+  function applyBambuRoutine(printerId) {
+    const pId = Number(printerId);
+    let tasks = CP.store.get('cp_maint_tasks', []);
+    const bTemplates = getBambuTaskTemplates();
+
+    // Remove existing tasks for this printer
+    tasks = tasks.filter(t => t.printerId !== pId);
+
+    // Add Bambu routine tasks
+    bTemplates.forEach(t => {
+      tasks.push({
+        id: `task_${pId}_${t.key}`,
+        printerId: pId,
+        key: t.key,
+        label: t.label,
+        intervalDays: t.intervalDays,
+        lastDone: null
+      });
+    });
+
+    CP.store.set('cp_maint_tasks', tasks);
+
+    // Set printer nozzle type to hardened_steel if not already set
+    const printers = CP.store.get('cp_printers', []);
+    const pr = printers.find(p => p.id === pId);
+    if (pr) {
+      if (!pr.nozzle) pr.nozzle = { type: 'hardened_steel', gramsExtruded: 0, abrasiveGramsExtruded: 0 };
+      else pr.nozzle.type = 'hardened_steel';
+      CP.store.set('cp_printers', printers);
+    }
+
+    if (CP.bus) CP.bus.emit('maint:changed');
+    updateGlobalAlerts();
+    return tasks.filter(t => t.printerId === pId);
+  }
+
   return {
     init,
     taskStatus,
@@ -387,7 +437,9 @@ CP.maint = (function () {
     markDone,
     changeNozzle,
     updateGlobalAlerts,
-    seedMaintData
+    seedMaintData,
+    getBambuTaskTemplates,
+    applyBambuRoutine
   };
 })();
 

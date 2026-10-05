@@ -21,12 +21,7 @@ CP.farm = (function () {
       list = CP.defaults ? JSON.parse(JSON.stringify(CP.defaults.printers)) : [];
       if (list.length === 0) {
         for (let i = 1; i <= 10; i++) {
-          list.push({
-            id: i, name: `Printer ${String(i).padStart(2, '0')}`, model: 'Ender 3', status: 'idle',
-            statusNote: '', material: 'PLA', currentJob: null,
-            nozzle: { type: 'brass', installedAt: new Date().toISOString(), gramsExtruded: 0, abrasiveGramsExtruded: 0 },
-            octoprint: { url: '', apiKey: '' }
-          });
+          list.push({ id: i, name: `Printer ${String(i).padStart(2, '0')}`, model: 'Ender 3', status: 'idle', statusNote: '', material: 'PLA', currentJob: null, nozzle: { type: 'brass', installedAt: new Date().toISOString(), gramsExtruded: 0, abrasiveGramsExtruded: 0 }, octoprint: { url: '', apiKey: '' } });
         }
       }
       CP.store.set('cp_printers', list);
@@ -70,17 +65,18 @@ CP.farm = (function () {
     });
   }
 
-  function updateOctoUI(printerId) {
+  function updateTelemetryUI(serviceName, printerId) {
     if (!root) return;
-    const printers = getPrinters();
-    const p = printers.find(x => x.id === printerId);
+    const p = getPrinters().find(x => x.id === printerId);
     if (!p) return;
-    const chipSlot = root.querySelector(`.octo-chip-slot[data-printer-id="${printerId}"]`);
-    if (chipSlot && CP.octo) chipSlot.innerHTML = CP.octo.renderCardChip(p);
-    const stripSlot = root.querySelector(`.octo-strip-slot[data-printer-id="${printerId}"]`);
-    if (stripSlot && CP.octo) stripSlot.innerHTML = CP.octo.renderCardStrip(p);
-    const suggSlot = root.querySelector(`.octo-suggest-slot[data-printer-id="${printerId}"]`);
-    if (suggSlot && CP.octo) suggSlot.innerHTML = CP.octo.renderSuggestion(p);
+    const svc = serviceName === 'bambu' ? CP.bambu : CP.octo;
+    if (!svc) return;
+    const chipSlot = root.querySelector(`.${serviceName}-chip-slot[data-printer-id="${printerId}"]`);
+    if (chipSlot) chipSlot.innerHTML = svc.renderCardChip(p);
+    const stripSlot = root.querySelector(`.${serviceName}-strip-slot[data-printer-id="${printerId}"]`);
+    if (stripSlot) stripSlot.innerHTML = svc.renderCardStrip(p);
+    const suggSlot = root.querySelector(`.${serviceName}-suggest-slot[data-printer-id="${printerId}"]`);
+    if (suggSlot) suggSlot.innerHTML = svc.renderSuggestion(p);
   }
 
   function openAssignModal(order, part, printer) {
@@ -112,6 +108,7 @@ CP.farm = (function () {
       bodyNode: wrapper,
       buttons: [
         { label: 'Cancel', kind: 'btn-secondary' },
+        { label: '🎋 Slice in Bambu', kind: 'btn-secondary', onClick: () => { if (CP.bambu) CP.bambu.openInStudio(part, order, printer.bambu?.bridgeUrl); return false; } },
         {
           label: 'Confirm & Start Print',
           kind: 'btn-primary',
@@ -202,11 +199,9 @@ CP.farm = (function () {
     const wrapper = document.createElement('div');
     wrapper.innerHTML = `
       <div class="banner banner-info" style="margin-bottom:12px;"><div><strong>${CP.util.esc(job.partName)}</strong> (${CP.util.esc(job.orderId)})</div><div style="font-size:12px;">Material: ${CP.util.esc(job.material)} &bull; Planned: ${job.gramsPlanned}g</div></div>
-      <div class="field"><label>Actual Grams Extruded (g):</label><input type="number" class="input" id="comp-actual-g" min="0.1" step="0.1" value="${job.gramsPlanned}"><span class="help-text">Includes part, purge lines, and supports.</span></div>
-    `;
+      <div class="field"><label>Actual Grams Extruded (g):</label><input type="number" class="input" id="comp-actual-g" min="0.1" step="0.1" value="${job.gramsPlanned}"><span class="help-text">Includes part, purge lines, and supports.</span></div>`;
     CP.ui.modal({
-      title: `Mark Completed - ${printer.name}`,
-      bodyNode: wrapper,
+      title: `Mark Completed - ${printer.name}`, bodyNode: wrapper,
       buttons: [
         { label: 'Cancel', kind: 'btn-secondary' },
         {
@@ -328,7 +323,13 @@ CP.farm = (function () {
                   <div class="queue-chip-header"><span class="queue-chip-part">${CP.util.esc(item.part.name)}</span><span class="queue-chip-order">${CP.util.esc(item.order.id)}</span></div>
                   <div class="queue-chip-customer">${CP.util.esc(item.order.customer?.name || 'Customer')}</div>
                   <div class="queue-chip-meta"><span class="queue-chip-tag">${CP.util.esc(item.part.material)}</span><span class="queue-chip-tag">${CP.util.esc(item.part.layer)}mm</span><span class="queue-chip-tag">${totalG}g (${item.part.weightG}g × ${item.part.qty})</span><span class="queue-chip-tag">~${estH}h</span></div>
-                  <div class="queue-chip-footer"><div><span>${CP.util.esc(dueText)}</span>${dueSoon ? '<span class="badge badge-due-soon" style="margin-left:4px;">Due soon</span>' : ''}</div><button type="button" class="btn btn-secondary btn-sm btn-chip-assign" data-order-id="${CP.util.esc(item.order.id)}" data-part-id="${CP.util.esc(item.part.id)}" style="min-height:28px; padding:0 8px; font-size:11px;">Assign...</button></div>
+                  <div class="queue-chip-footer">
+                    <div><span>${CP.util.esc(dueText)}</span>${dueSoon ? '<span class="badge badge-due-soon" style="margin-left:4px;">Due soon</span>' : ''}</div>
+                    <div style="display:flex; gap:4px;">
+                      <button type="button" class="btn btn-secondary btn-sm btn-chip-bambu" data-order-id="${CP.util.esc(item.order.id)}" data-part-id="${CP.util.esc(item.part.id)}" title="Open in Bambu Studio" style="min-height:28px; padding:0 8px; font-size:11px;">🎋 Bambu</button>
+                      <button type="button" class="btn btn-secondary btn-sm btn-chip-assign" data-order-id="${CP.util.esc(item.order.id)}" data-part-id="${CP.util.esc(item.part.id)}" style="min-height:28px; padding:0 8px; font-size:11px;">Assign...</button>
+                    </div>
+                  </div>
                 </div>`;
             }).join('')}
           </div>
@@ -359,18 +360,18 @@ CP.farm = (function () {
             return `
               <div class="printer-card" data-printer-id="${p.id}" data-status="${p.status}" ${p.status === 'printing' && job ? `data-started-at="${job.startedAt}" data-duration-min="${job.durationMin}"` : ''}>
                 <div class="printer-card-top">
-                  <div>
-                    <span class="printer-card-name">${CP.util.esc(p.name)}</span>
-                    <span class="printer-card-model">${CP.util.esc(p.model)}</span>
-                  </div>
+                  <div><span class="printer-card-name">${CP.util.esc(p.name)}</span><span class="printer-card-model">${CP.util.esc(p.model)}</span></div>
                   <div style="display:flex; align-items:center; gap:4px;">
                     <div class="octo-chip-slot" data-printer-id="${p.id}">${CP.octo ? CP.octo.renderCardChip(p) : ''}</div>
+                    <div class="bambu-chip-slot" data-printer-id="${p.id}">${CP.bambu ? CP.bambu.renderCardChip(p) : ''}</div>
                     <span class="printer-card-mat">${CP.util.esc(p.material || 'PLA')}</span>
                     <span class="badge badge-status-${p.status}">${p.status.toUpperCase()}</span>
                   </div>
                 </div>
                 <div class="octo-strip-slot" data-printer-id="${p.id}">${CP.octo ? CP.octo.renderCardStrip(p) : ''}</div>
+                <div class="bambu-strip-slot" data-printer-id="${p.id}">${CP.bambu ? CP.bambu.renderCardStrip(p) : ''}</div>
                 <div class="octo-suggest-slot" data-printer-id="${p.id}">${CP.octo ? CP.octo.renderSuggestion(p) : ''}</div>
+                <div class="bambu-suggest-slot" data-printer-id="${p.id}">${CP.bambu ? CP.bambu.renderSuggestion(p) : ''}</div>
                 <div class="printer-card-body">${body}</div>
                 <div>
                   <div class="printer-card-actions">${actions}</div>
@@ -439,6 +440,20 @@ CP.farm = (function () {
       }
     });
 
+    root.querySelector('.pending-queue-list')?.addEventListener('click', (e) => {
+      const bBtn = e.target.closest('.btn-chip-bambu');
+      if (bBtn) {
+        const orderId = bBtn.getAttribute('data-order-id');
+        const partId = bBtn.getAttribute('data-part-id');
+        const orders = CP.store.get('cp_orders', []);
+        const order = orders.find(o => o.id === orderId);
+        const part = (order?.parts || []).find(p => p.id === partId);
+        if (part && CP.bambu) {
+          CP.bambu.openInStudio(part, order);
+        }
+      }
+    });
+
     root.querySelector('.printers-grid')?.addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-printer-id]');
       if (!btn) return;
@@ -447,8 +462,10 @@ CP.farm = (function () {
       if (!printer) return;
 
       if (btn.classList.contains('btn-octo-retry') || btn.classList.contains('btn-octo-retry-link')) {
-        if (CP.octo) CP.octo.retry(printerId, (id) => updateOctoUI(id));
-      } else if (btn.classList.contains('btn-octo-suggest-complete')) {
+        if (CP.octo) CP.octo.retry(printerId, (id) => updateTelemetryUI('octo', id));
+      } else if (btn.classList.contains('btn-bambu-retry') || btn.classList.contains('btn-bambu-retry-link')) {
+        if (CP.bambu) CP.bambu.retry(printerId, (id) => updateTelemetryUI('bambu', id));
+      } else if (btn.classList.contains('btn-octo-suggest-complete') || btn.classList.contains('btn-bambu-suggest-complete')) {
         openCompleteModal(printer);
       } else if (btn.classList.contains('btn-card-assign')) openPendingChooserModal(printer);
       else if (btn.classList.contains('btn-mark-completed')) openCompleteModal(printer);
@@ -520,9 +537,11 @@ CP.farm = (function () {
     orders.forEach(o => { if (o.status === 'confirmed' || o.status === 'printing') (o.parts || []).forEach(p => { if (p.status === 'pending') pendingCount++; }); });
 
     if (pendingCount < 5) {
-      orders.push(mkOrder('CP-2026-0003', 1, { name: 'Apex Auto Dynamics', phone: '9444012345', email: 'service@apexauto.in', category: 'Automotive Garage' }, 'Priority telemetry mounts', [mkPart('Drone Gimbal Baseplate', 'PLA', '0.20', 30, 45, 1, 'pending', null, null), mkPart('Telemetry Mast Clamp', 'ABS', '0.20', 45, 35, 2, 'pending', null, null)], 'confirmed', 500));
-      orders.push(mkOrder('CP-2026-0004', 2, { name: 'Vignesh R', phone: '9884012345', email: 'vignesh.r@gmail.com', category: 'Hobbyist' }, 'Action camera shoe', [mkPart('GoPro Helmet J-Hook', 'TPU', '0.20', 100, 40, 1, 'pending', null, null), mkPart('Handlebar Spreader Clamp', 'ABS', '0.12', 50, 30, 2, 'pending', null, null)], 'confirmed', 400));
-      orders.push(mkOrder('CP-2026-0005', 4, { name: 'IIT Madras Tech Club', phone: '9840998877', email: 'sae@iitm.ac.in', category: 'College Project' }, 'Aero wing test flap', [mkPart('Formula Student Aero Flap', 'PLA', '0.28', 20, 140, 1, 'pending', null, null), mkPart('ECU Module Enclosure Lid', 'PLA', '0.20', 30, 50, 1, 'pending', null, null)], 'confirmed', 600));
+      orders.push(
+        mkOrder('CP-2026-0003', 1, { name: 'Apex Auto Dynamics', phone: '9444012345', email: 'service@apexauto.in', category: 'Automotive Garage' }, 'Priority telemetry mounts', [mkPart('Drone Gimbal Baseplate', 'PLA', '0.20', 30, 45, 1, 'pending', null, null), mkPart('Telemetry Mast Clamp', 'ABS', '0.20', 45, 35, 2, 'pending', null, null)], 'confirmed', 500),
+        mkOrder('CP-2026-0004', 2, { name: 'Vignesh R', phone: '9884012345', email: 'vignesh.r@gmail.com', category: 'Hobbyist' }, 'Action camera shoe', [mkPart('GoPro Helmet J-Hook', 'TPU', '0.20', 100, 40, 1, 'pending', null, null), mkPart('Handlebar Spreader Clamp', 'ABS', '0.12', 50, 30, 2, 'pending', null, null)], 'confirmed', 400),
+        mkOrder('CP-2026-0005', 4, { name: 'IIT Madras Tech Club', phone: '9840998877', email: 'sae@iitm.ac.in', category: 'College Project' }, 'Aero wing test flap', [mkPart('Formula Student Aero Flap', 'PLA', '0.28', 20, 140, 1, 'pending', null, null), mkPart('ECU Module Enclosure Lid', 'PLA', '0.20', 30, 50, 1, 'pending', null, null)], 'confirmed', 600)
+      );
     }
     CP.store.set('cp_orders', orders);
 
@@ -533,13 +552,13 @@ CP.farm = (function () {
         : null;
       printers.push({
         id: i, name: `Printer ${String(i).padStart(2, '0')}`,
-        model: i <= 2 ? 'Ender 3 V2' : i === 3 ? 'Ender 3 S1' : i === 4 ? 'Ender 3' : i === 5 ? 'Ender 3 Pro' : 'Ender 3',
-        status: i === 1 || i === 2 ? 'printing' : i === 3 ? 'maint' : i === 4 ? 'error' : i === 5 ? 'post' : 'idle',
-        statusNote: i === 3 ? 'Bed leveling check & lead screw lubrication' : i === 4 ? 'Nozzle clog - awaiting hotend clearance' : '',
-        material: i === 2 || i === 4 ? 'ABS' : i === 5 ? 'TPU' : 'PLA',
-        currentJob: curJob,
-        nozzle: { type: 'brass', installedAt: nowISO, gramsExtruded: 1200 + i * 200, abrasiveGramsExtruded: 150 },
-        octoprint: { url: '', apiKey: '' }
+        model: i <= 2 ? 'Bambu Lab X1-Carbon' : i === 3 ? 'Bambu Lab P1S' : i === 4 ? 'Ender 3' : i === 5 ? 'Ender 3 Pro' : 'Ender 3',
+        status: i <= 2 ? 'printing' : i === 3 ? 'maint' : i === 4 ? 'error' : i === 5 ? 'post' : 'idle',
+        statusNote: i === 3 ? 'Carbon rod IPA wipe & Z lead screw lube' : i === 4 ? 'Nozzle clog - awaiting hotend clearance' : '',
+        material: i === 2 || i === 4 ? 'ABS' : i === 5 ? 'TPU' : 'PLA', currentJob: curJob,
+        nozzle: { type: i <= 3 ? 'hardened_steel' : 'brass', installedAt: nowISO, gramsExtruded: 1200 + i * 200, abrasiveGramsExtruded: 150 },
+        integration: i <= 3 ? 'bambu' : 'none', octoprint: { url: '', apiKey: '' },
+        bambu: { ip: i <= 3 ? `192.168.1.10${i}` : '', accessCode: i <= 3 ? '12345678' : '', serial: i <= 3 ? `01P00A12345600${i}` : '', bridgeUrl: 'http://127.0.0.1:5005' }
       });
     }
     CP.store.set('cp_printers', printers);
@@ -550,19 +569,14 @@ CP.farm = (function () {
     renderView();
     if (timerId) clearInterval(timerId);
     timerId = setInterval(tick, 1000);
-    if (CP.octo) {
-      CP.octo.startPolling((printerId) => updateOctoUI(printerId));
-    }
+    if (CP.octo) CP.octo.startPolling((id) => updateTelemetryUI('octo', id));
+    if (CP.bambu) CP.bambu.startPolling((id) => updateTelemetryUI('bambu', id));
   }
 
   function destroy() {
-    if (timerId) {
-      clearInterval(timerId);
-      timerId = null;
-    }
-    if (CP.octo) {
-      CP.octo.stopPolling();
-    }
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    if (CP.octo) CP.octo.stopPolling();
+    if (CP.bambu) CP.bambu.stopPolling();
     root = null;
   }
 

@@ -91,26 +91,9 @@ CP.registerModule((function () {
     const p = s.pricing || {};
     const materials = s.materials || [];
 
-    const rateRows = materials.map(mat => {
-      const rate = p.ratePerGram && p.ratePerGram[mat] !== undefined ? p.ratePerGram[mat] : 4;
-      return `
-        <div class="field">
-          <label for="cfg-rate-${CP.util.esc(mat)}">${CP.util.esc(mat)} (₹ / gram)</label>
-          <input type="number" step="0.25" min="0" id="cfg-rate-${CP.util.esc(mat)}" class="input cfg-rate-input" data-mat="${CP.util.esc(mat)}" value="${rate}">
-        </div>
-      `;
-    }).join('');
-
-    const catDiscounts = p.categoryDiscountPct || {
-      "College Project": 0, "Hardware Startup R&D": 0, "Automotive Garage": 0, "Hobbyist": 0
-    };
-
-    const catRows = Object.entries(catDiscounts).map(([cat, val]) => `
-      <div class="field">
-        <label for="cfg-cat-${CP.util.esc(cat)}">${CP.util.esc(cat)} (%)</label>
-        <input type="number" step="1" min="0" max="100" id="cfg-cat-${CP.util.esc(cat)}" class="input cfg-cat-input" data-cat="${CP.util.esc(cat)}" value="${val}">
-      </div>
-    `).join('');
+    const rateRows = materials.map(mat => `<div class="field"><label for="cfg-rate-${CP.util.esc(mat)}">${CP.util.esc(mat)} (₹ / gram)</label><input type="number" step="0.25" min="0" id="cfg-rate-${CP.util.esc(mat)}" class="input cfg-rate-input" data-mat="${CP.util.esc(mat)}" value="${p.ratePerGram && p.ratePerGram[mat] !== undefined ? p.ratePerGram[mat] : 4}"></div>`).join('');
+    const catDiscounts = p.categoryDiscountPct || { "College Project": 0, "Hardware Startup R&D": 0, "Automotive Garage": 0, "Hobbyist": 0 };
+    const catRows = Object.entries(catDiscounts).map(([cat, val]) => `<div class="field"><label for="cfg-cat-${CP.util.esc(cat)}">${CP.util.esc(cat)} (%)</label><input type="number" step="1" min="0" max="100" id="cfg-cat-${CP.util.esc(cat)}" class="input cfg-cat-input" data-cat="${CP.util.esc(cat)}" value="${val}"></div>`).join('');
 
     return `
       <div class="card">
@@ -230,48 +213,66 @@ CP.registerModule((function () {
 
   function renderConnectionsTab() {
     const printers = loadPrinters();
+    const models = (CP.defaults && CP.defaults.printerModels) || [
+      'Ender 3', 'Bambu Lab X1-Carbon', 'Bambu Lab P1S', 'Bambu Lab P1P', 'Bambu Lab A1', 'Bambu Lab A1 Mini', 'Prusa MK4', 'Custom FDM'
+    ];
 
-    const printerRows = printers.map(p => `
-      <div class="octo-printer-row" data-printer-id="${p.id}">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <div>
-            <strong style="font-size: 14px;">${CP.util.esc(p.name)}</strong>
-            <span style="color: var(--text-muted); font-size: 12px; margin-left: 6px;">(${CP.util.esc(p.model)})</span>
+    const printerRows = printers.map(p => {
+      const integ = p.integration || (p.bambu && (p.bambu.ip || p.bambu.serial) ? 'bambu' : (p.octoprint && p.octoprint.url ? 'octoprint' : 'none'));
+      const isBambu = integ === 'bambu';
+      const isOcto = integ === 'octoprint';
+
+      return `
+        <div class="octo-printer-row" data-printer-id="${p.id}" style="padding: 16px 0; border-bottom: 1px solid var(--border);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <strong style="font-size: 15px;">${CP.util.esc(p.name)}</strong>
+              <span style="color: var(--text-muted); font-size: 12px; margin-left: 6px;">(${CP.util.esc(p.model)})</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <select class="select select-sm printer-model-select" id="printer-model-${p.id}" data-printer-id="${p.id}" style="font-size: 12px;">
+                ${models.map(m => `<option value="${CP.util.esc(m)}" ${p.model === m ? 'selected' : ''}>${CP.util.esc(m)}</option>`).join('')}
+              </select>
+              <select class="select select-sm printer-integ-select" id="printer-integ-${p.id}" data-printer-id="${p.id}" style="font-size: 12px; font-weight: 600;">
+                <option value="none" ${integ === 'none' ? 'selected' : ''}>Manual (No Telemetry)</option>
+                <option value="bambu" ${isBambu ? 'selected' : ''}>🎋 Bambu Lab (LAN Mode)</option>
+                <option value="octoprint" ${isOcto ? 'selected' : ''}>🐙 OctoPrint</option>
+              </select>
+              <span class="badge badge-status-${p.status}">${p.status.toUpperCase()}</span>
+            </div>
           </div>
-          <span class="badge badge-status-${p.status}">${p.status.toUpperCase()}</span>
-        </div>
-        <div class="grid grid-cols-2" style="gap: 12px;">
-          <div class="field" style="margin-bottom: 0;">
-            <label for="octo-url-${p.id}">OctoPrint Base URL</label>
-            <input type="text" id="octo-url-${p.id}" class="input octo-url-input" placeholder="e.g. http://192.168.1.50:5000" value="${CP.util.esc(p.octoprint?.url || '')}">
-          </div>
-          <div class="field" style="margin-bottom: 0;">
-            <label for="octo-key-${p.id}">API Key (Optional)</label>
-            <input type="text" id="octo-key-${p.id}" class="input octo-key-input" placeholder="OctoPrint User API Key" value="${CP.util.esc(p.octoprint?.apiKey || '')}">
+
+          ${CP.bambu ? CP.bambu.renderConfigFields(p) : ''}
+          ${CP.octo ? CP.octo.renderConfigFields(p) : ''}
+
+          <div class="none-fields-wrap" id="none-fields-${p.id}" style="display: ${integ === 'none' ? 'block' : 'none'}; font-size: 12px; color: var(--text-muted); font-style: italic;">
+            Manual mode: Jobs are assigned and completed manually on the Farm Board.
           </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
-          <button type="button" class="btn btn-secondary btn-sm btn-test-octo" data-printer-id="${p.id}">Test Connection</button>
-          <span class="octo-test-feedback" id="octo-feedback-${p.id}" style="font-size: 12px;"></span>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     return `
-      <div class="card octo-help-card" style="border-left: 4px solid var(--primary); background: var(--surface-alt);">
-        <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--text);">📡 OctoPrint Integration &amp; Workshop Network Guide</h3>
-        <p style="font-size: 13px; margin-bottom: 8px; color: var(--text);">
-          Connect local OctoPrint instances running on Raspberry Pis or old Android phones to monitor bed/nozzle temperatures, live print progress, and automatically detect finished prints on the Farm Board.
+      <div class="card octo-help-card" style="border-left: 4px solid #10b981; background: var(--surface-alt); margin-bottom: 20px;">
+        <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--text);">🎋 Bambu Lab &amp; Farm Network Integration Guide</h3>
+        <p style="font-size: 13px; margin-bottom: 10px; color: var(--text);">
+          Connect Bambu Lab printers (X1-Carbon, P1S, P1P, A1, A1 Mini) or OctoPrint machines for live bed/tool temperatures, print task progress, and auto-completion detection.
         </p>
-        <div style="font-size: 12px; line-height: 1.6; color: var(--text-muted); display: flex; flex-direction: column; gap: 6px;">
-          <div>
-            <strong>1. Enable CORS in OctoPrint:</strong> In the OctoPrint web interface, navigate to <em>Settings (wrench icon) &gt; API &gt; Enable "Allow Cross Origin Resource Sharing (CORS)"</em>. Save and restart OctoPrint.
+        <div style="font-size: 12px; line-height: 1.6; color: var(--text-muted); display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div style="background: var(--surface); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+            <strong style="color: var(--text);">🎋 Setting Up Bambu Lab LAN Mode:</strong>
+            <ol style="margin-left: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 4px;">
+              <li>On the printer screen: go to <em>Settings &gt; Network &gt; Turn ON "LAN Only Mode"</em>.</li>
+              <li>Note down the <strong>IP Address</strong>, <strong>LAN Access Code</strong>, and <strong>Serial Number</strong>.</li>
+              <li>Double-click <code>tools/run_bambu_bridge.bat</code> on this computer to start the lightweight local bridge on port 5005.</li>
+            </ol>
           </div>
-          <div>
-            <strong>2. HTTPS Mixed Content Notice:</strong> Browsers strictly block unencrypted HTTP network calls when an application is hosted on an HTTPS origin (e.g. GitHub Pages). Real-time telemetry works when opening CarbonPrints OS locally on the workshop LAN (via <code>http://localhost:8080</code> or <code>file:///...</code>).
-          </div>
-          <div>
-            <strong>3. Security Notice:</strong> API keys are stored unencrypted in this browser's localStorage. Use only on trusted workshop computers.
+          <div style="background: var(--surface); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+            <strong style="color: var(--text);">🚀 Bambu Studio Slicer Handoff:</strong>
+            <ul style="margin-left: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 4px;">
+              <li>Click <strong>"🎋 Bambu"</strong> on any task in the Farm Board Pending Queue.</li>
+              <li>It instantly launches <strong>Bambu Studio</strong> and packages the part with preset layer and material settings.</li>
+            </ul>
           </div>
         </div>
       </div>
@@ -279,12 +280,12 @@ CP.registerModule((function () {
       <div class="card">
         <div class="card-header">
           <div>
-            <h3 class="card-title">Printer Connections (Printer 01 &ndash; 10)</h3>
-            <div class="card-subtitle">Configure optional read-only OctoPrint addresses and credentials for each machine</div>
+            <h3 class="card-title">Printer Farm Connections (Printer 01 &ndash; 10)</h3>
+            <div class="card-subtitle">Configure model profiles, Bambu Lab LAN credentials, or OctoPrint addresses</div>
           </div>
         </div>
         <div class="banner banner-warning" style="margin-bottom: 16px; font-size: 12px;">
-          🔒 <strong>Security Warning:</strong> API keys are stored unencrypted in this browser. Use only on a trusted computer.
+          🔒 <strong>Security Notice:</strong> Bambu access codes and API keys are stored unencrypted in this browser's localStorage. Configure only on trusted workshop terminals.
         </div>
         <div class="octo-printers-table">${printerRows}</div>
         <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
@@ -382,18 +383,27 @@ CP.registerModule((function () {
     const prs = loadPrinters();
     let changed = false;
     prs.forEach(p => {
-      const urlInp = rootElement.querySelector(`#octo-url-${p.id}`);
-      const keyInp = rootElement.querySelector(`#octo-key-${p.id}`);
-      if (urlInp) {
-        p.octoprint = p.octoprint || {};
-        p.octoprint.url = urlInp.value.trim();
-        p.octoprint.apiKey = (keyInp?.value || '').trim();
+      const model = rootElement.querySelector(`#printer-model-${p.id}`)?.value;
+      const integ = rootElement.querySelector(`#printer-integ-${p.id}`)?.value;
+      const url = rootElement.querySelector(`#octo-url-${p.id}`)?.value;
+      const key = rootElement.querySelector(`#octo-key-${p.id}`)?.value;
+      const bIp = rootElement.querySelector(`#bambu-ip-${p.id}`)?.value;
+      const bCode = rootElement.querySelector(`#bambu-code-${p.id}`)?.value;
+      const bSerial = rootElement.querySelector(`#bambu-serial-${p.id}`)?.value;
+      const bBridge = rootElement.querySelector(`#bambu-bridge-${p.id}`)?.value;
+
+      if (model) { p.model = model; changed = true; }
+      if (integ) { p.integration = integ; changed = true; }
+      if (url !== undefined) {
+        p.octoprint = { url: url.trim(), apiKey: (key || '').trim() };
+        changed = true;
+      }
+      if (bIp !== undefined) {
+        p.bambu = { ip: bIp.trim(), accessCode: (bCode || '').trim(), serial: (bSerial || '').trim(), bridgeUrl: (bBridge || '').trim() || 'http://127.0.0.1:5005' };
         changed = true;
       }
     });
-    if (changed) {
-      CP.store.set('cp_printers', prs);
-    }
+    if (changed) CP.store.set('cp_printers', prs);
   }
 
   function bindEvents(rootElement) {
@@ -403,6 +413,19 @@ CP.registerModule((function () {
         if (activeTab === 'connections') saveConnectionsFromDOM(rootElement);
         activeTab = e.target.getAttribute('data-tab');
         renderFull(rootElement);
+      });
+    });
+
+    rootElement.querySelectorAll('.printer-integ-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const prId = e.target.getAttribute('data-printer-id');
+        const val = e.target.value;
+        const bWrap = rootElement.querySelector(`#bambu-fields-${prId}`);
+        const oWrap = rootElement.querySelector(`#octo-fields-${prId}`);
+        const nWrap = rootElement.querySelector(`#none-fields-${prId}`);
+        if (bWrap) bWrap.style.display = val === 'bambu' ? 'block' : 'none';
+        if (oWrap) oWrap.style.display = val === 'octoprint' ? 'block' : 'none';
+        if (nWrap) nWrap.style.display = val === 'none' ? 'block' : 'none';
       });
     });
 
@@ -470,37 +493,34 @@ CP.registerModule((function () {
 
     rootElement.querySelectorAll('.btn-test-octo').forEach(btn => {
       btn.addEventListener('click', async () => {
-        const printerId = Number(btn.getAttribute('data-printer-id'));
-        const urlInp = rootElement.querySelector(`#octo-url-${printerId}`);
-        const keyInp = rootElement.querySelector(`#octo-key-${printerId}`);
-        const fb = rootElement.querySelector(`#octo-feedback-${printerId}`);
-        if (!urlInp || !fb) return;
-
-        const url = urlInp.value.trim();
-        const apiKey = (keyInp?.value || '').trim();
-
-        if (!url) {
-          fb.className = 'octo-test-feedback is-error';
-          fb.textContent = 'Please enter an OctoPrint base URL first.';
-          return;
-        }
-
-        fb.className = 'octo-test-feedback is-testing';
-        fb.textContent = 'Testing connection (5s timeout)...';
+        const id = Number(btn.getAttribute('data-printer-id')), fb = rootElement.querySelector(`#octo-feedback-${id}`);
+        const url = (rootElement.querySelector(`#octo-url-${id}`)?.value || '').trim();
+        const apiKey = (rootElement.querySelector(`#octo-key-${id}`)?.value || '').trim();
+        if (!fb) return;
+        if (!url) { fb.className = 'octo-test-feedback is-error'; fb.textContent = 'Please enter an OctoPrint base URL.'; return; }
+        fb.className = 'octo-test-feedback is-testing'; fb.textContent = 'Testing connection (5s)...';
         btn.disabled = true;
-
         const res = await CP.octo.testConnection({ url, apiKey });
         btn.disabled = false;
+        fb.className = res.online ? 'octo-test-feedback is-success' : 'octo-test-feedback is-error';
+        fb.textContent = res.online ? `🟢 Connected! State: ${res.state} (Bed: ${res.bedTemp ?? '--'}°C, Tool: ${res.toolTemp ?? '--'}°C)` : `🔴 ${res.error}`;
+      });
+    });
 
-        if (res.online) {
-          fb.className = 'octo-test-feedback is-success';
-          const bed = res.bedTemp != null ? `${res.bedTemp}°C` : '--';
-          const tool = res.toolTemp != null ? `${res.toolTemp}°C` : '--';
-          fb.textContent = `🟢 Connected! State: ${res.state} (Bed: ${bed}, Tool: ${tool})`;
-        } else {
-          fb.className = 'octo-test-feedback is-error';
-          fb.textContent = `🔴 ${res.error}`;
-        }
+    rootElement.querySelectorAll('.btn-test-bambu').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = Number(btn.getAttribute('data-printer-id')), fb = rootElement.querySelector(`#bambu-feedback-${id}`);
+        if (!fb) return;
+        const ip = (rootElement.querySelector(`#bambu-ip-${id}`)?.value || '').trim();
+        const accessCode = (rootElement.querySelector(`#bambu-code-${id}`)?.value || '').trim();
+        const serial = (rootElement.querySelector(`#bambu-serial-${id}`)?.value || '').trim();
+        const bridgeUrl = (rootElement.querySelector(`#bambu-bridge-${id}`)?.value || '').trim() || 'http://127.0.0.1:5005';
+        fb.className = 'bambu-test-feedback is-testing'; fb.textContent = 'Checking bridge & Bambu connection...';
+        btn.disabled = true;
+        const res = CP.bambu ? await CP.bambu.testConnection({ ip, accessCode, serial, bridgeUrl, id }) : { online: false, error: 'Bambu service uninitialized.' };
+        btn.disabled = false;
+        fb.className = res.online ? 'bambu-test-feedback is-success' : 'bambu-test-feedback is-error';
+        fb.textContent = res.online ? `🟢 Connected to Bambu Lab! State: ${res.state} (Bed: ${res.bedTemp ?? '--'}°C, Tool: ${res.toolTemp ?? '--'}°C)` : `🔴 ${res.error || 'Connection failed'}`;
       });
     });
 

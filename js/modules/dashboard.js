@@ -268,7 +268,7 @@ CP.registerModule((function () {
     const barsSvg = months.map((m, idx) => {
       const barH = ceiling > 0 ? (m.revenue / ceiling) * barMaxH : 0;
       const barX = idx * slotW + (slotW - barW) / 2, barY = chartBottom - barH, centerX = idx * slotW + slotW / 2;
-      const fill = m.revenue > 0 ? (m.isCurrent ? '#0f766e' : '#0d9488') : '#e2e8f0';
+      const fill = m.revenue > 0 ? (m.isCurrent ? '#00ae42' : '#10b981') : '#e2e8f0';
       const textY = Math.max(18, barY - 8), displayVal = m.revenue > 0 ? `₹${CP.util.fmtNum(Math.round(m.revenue))}` : '₹0';
       return `
         <g class="chart-bar-group" tabindex="0">
@@ -276,7 +276,7 @@ CP.registerModule((function () {
           <rect x="${idx * slotW + 4}" y="${chartTop - 15}" width="${slotW - 8}" height="${barMaxH + 20}" rx="4" fill="transparent" class="bar-slot-bg" />
           <rect x="${barX}" y="${barY}" width="${barW}" height="${Math.max(barH, 4)}" rx="4" ry="4" fill="${fill}" />
           <text x="${centerX}" y="${textY}" text-anchor="middle" font-size="11" font-weight="600" fill="${m.revenue > 0 ? '#0f172a' : '#94a3b8'}">${displayVal}</text>
-          <text x="${centerX}" y="188" text-anchor="middle" font-size="12" font-weight="${m.isCurrent ? '700' : '500'}" fill="${m.isCurrent ? '#0f766e' : '#64748b'}">${CP.util.esc(m.label)}</text>
+          <text x="${centerX}" y="188" text-anchor="middle" font-size="12" font-weight="${m.isCurrent ? '700' : '500'}" fill="${m.isCurrent ? '#00ae42' : '#64748b'}">${CP.util.esc(m.label)}</text>
         </g>`;
     }).join('');
 

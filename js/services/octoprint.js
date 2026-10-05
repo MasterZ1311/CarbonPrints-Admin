@@ -318,6 +318,29 @@ CP.octo = (function () {
     return '';
   }
 
+  function renderConfigFields(p) {
+    const isOcto = (p.integration || (p.octoprint && p.octoprint.url ? 'octoprint' : 'none')) === 'octoprint';
+    return `
+      <div class="octo-fields-wrap" id="octo-fields-${p.id}" style="display: ${isOcto ? 'block' : 'none'}; background: var(--surface-alt); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 8px;">
+        <div style="font-size: 12px; font-weight: 700; color: var(--primary); margin-bottom: 8px;">🐙 OctoPrint Configuration</div>
+        <div class="grid grid-cols-2" style="gap: 10px; margin-bottom: 10px;">
+          <div class="field" style="margin-bottom: 0;">
+            <label for="octo-url-${p.id}" style="font-size: 11px;">OctoPrint Base URL</label>
+            <input type="text" id="octo-url-${p.id}" class="input input-sm octo-url-input" placeholder="e.g. http://192.168.1.50:5000" value="${CP.util ? CP.util.esc(p.octoprint?.url || '') : (p.octoprint?.url || '')}">
+          </div>
+          <div class="field" style="margin-bottom: 0;">
+            <label for="octo-key-${p.id}" style="font-size: 11px;">API Key (Optional)</label>
+            <input type="text" id="octo-key-${p.id}" class="input input-sm octo-key-input" placeholder="OctoPrint User API Key" value="${CP.util ? CP.util.esc(p.octoprint?.apiKey || '') : (p.octoprint?.apiKey || '')}">
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <button type="button" class="btn btn-secondary btn-sm btn-test-octo" data-printer-id="${p.id}">Test OctoPrint Connection</button>
+          <span class="octo-test-feedback" id="octo-feedback-${p.id}" style="font-size: 12px;"></span>
+        </div>
+      </div>
+    `;
+  }
+
   return {
     fetchStatus,
     startPolling,
@@ -329,6 +352,7 @@ CP.octo = (function () {
     renderCardChip,
     renderCardStrip,
     renderSuggestion,
+    renderConfigFields,
     cleanUrl,
     formatTimeLeft
   };

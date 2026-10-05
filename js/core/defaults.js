@@ -80,6 +80,13 @@ CP.defaults = (function () {
       octoprint: {
         url: "",
         apiKey: ""
+      },
+      integration: "none",
+      bambu: {
+        ip: "",
+        accessCode: "",
+        serial: "",
+        bridgeUrl: "http://127.0.0.1:5005"
       }
     });
   }
@@ -90,6 +97,26 @@ CP.defaults = (function () {
     { key: "bed_level", label: "Bed leveling check", intervalDays: 1 },
     { key: "lead_screw_lube", label: "Lead screw lubrication (white lithium grease)", intervalDays: 7 },
     { key: "belt_tension", label: "Belt tension check", intervalDays: 30 }
+  ];
+
+  const bambuTaskTemplates = [
+    { key: "bambu_carbon_rod", label: "Carbon X-axis rod wipe (99% IPA, no lube)", intervalDays: 14 },
+    { key: "bambu_lead_screw", label: "Z-axis lead screws clean & lube", intervalDays: 30 },
+    { key: "bambu_cutter_blade", label: "Filament cutter blade inspection", intervalDays: 30 },
+    { key: "bambu_wiper_sock", label: "Nozzle wiper pad & silicone sock check", intervalDays: 7 },
+    { key: "bambu_ams_feeder", label: "AMS feeder funnel & gear inspection", intervalDays: 30 },
+    { key: "bambu_carbon_filter", label: "Activated carbon air filter check", intervalDays: 90 }
+  ];
+
+  const printerModels = [
+    "Ender 3",
+    "Bambu Lab X1-Carbon",
+    "Bambu Lab P1S",
+    "Bambu Lab P1P",
+    "Bambu Lab A1",
+    "Bambu Lab A1 Mini",
+    "Prusa MK4",
+    "Custom FDM"
   ];
 
   for (let p = 1; p <= 10; p++) {
@@ -116,6 +143,9 @@ CP.defaults = (function () {
     settings,
     printers,
     maintTasks,
+    taskTemplates,
+    bambuTaskTemplates,
+    printerModels,
     counters,
     meta
   };

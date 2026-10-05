@@ -11,7 +11,7 @@
  * newest assets for all connected clients.
  * ============================================================================
  */
-const CACHE_VERSION = 'cp-os-v3';
+const CACHE_VERSION = 'cp-os-v6';
 
 /**
  * Precache list containing EVERY file in the project required for complete offline operation.
@@ -19,6 +19,7 @@ const CACHE_VERSION = 'cp-os-v3';
 const PRECACHE_ASSETS = [
   './',
   'index.html',
+  'favicon.ico',
   'manifest.webmanifest',
   'css/styles.css',
   'css/print.css',
@@ -40,6 +41,7 @@ const PRECACHE_ASSETS = [
   'js/services/maint-svc.js',
   'js/services/csv.js',
   'js/services/octoprint.js',
+  'js/services/bambu.js',
   'js/modules/dashboard.js',
   'js/modules/orderdesk.js',
   'js/modules/orders.js',

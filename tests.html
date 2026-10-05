@@ -140,6 +140,7 @@
   <script src="js/services/maint-svc.js?v=qa12"></script>
   <script src="js/services/csv.js?v=qa12"></script>
   <script src="js/services/octoprint.js?v=qa12"></script>
+  <script src="js/services/bambu.js?v=qa12"></script>
 
   <!-- Tiny Assertion Runner -->
   <script>
@@ -487,6 +488,53 @@
         assertEqual(plaReport.marginPerG, 3);
         assertEqual(plaReport.marginPct, 75, 'Margin is 75%');
         assertEqual(plaReport.belowTarget, false, '75% is not below 50% target');
+      });
+
+      // =======================================================================
+      // SUITE 14: Bambu Lab Studio & Hardware Integration
+      // =======================================================================
+      suite('14. Bambu Lab Studio & Telemetry Integration');
+
+      test('isBambuModel detects Bambu printer variants correctly', () => {
+        assert(CP.bambu.isBambuModel('Bambu Lab X1-Carbon'), 'X1-Carbon detected');
+        assert(CP.bambu.isBambuModel('Bambu Lab P1S'), 'P1S detected');
+        assert(CP.bambu.isBambuModel('Bambu Lab A1 Mini'), 'A1 Mini detected');
+        assert(!CP.bambu.isBambuModel('Ender 3 V2'), 'Ender 3 is not Bambu');
+        assert(!CP.bambu.isBambuModel('Prusa MK4'), 'Prusa is not Bambu');
+      });
+
+      test('create3mfStub generates valid 3MF metadata and XML structure', () => {
+        const part = { name: 'Gimbal Arm', material: 'ABS', layer: '0.20' };
+        const order = { id: 'CP-2026-TEST', customer: { name: 'Aero Labs' } };
+        const stub = CP.bambu.create3mfStub(part, order);
+
+        assert(stub.fileName.includes('Gimbal_Arm'), 'Filename contains sanitized part name');
+        assert(stub.fileName.endsWith('.3mf'), 'Filename ends in .3mf');
+        assert(stub.modelXml.includes('<model unit="millimeter"'), 'Contains 3MF root element');
+        assert(stub.modelXml.includes('Gimbal_Arm'), 'XML includes title metadata');
+      });
+
+      test('formatTimeLeft renders readable remaining time duration', () => {
+        assertEqual(CP.bambu.formatTimeLeft(3660), '1h 1m left');
+        assertEqual(CP.bambu.formatTimeLeft(180), '3m left');
+        assertEqual(CP.bambu.formatTimeLeft(45), '45s left');
+        assertEqual(CP.bambu.formatTimeLeft(null), null);
+      });
+
+      test('applyBambuRoutine configures official 6 maintenance tasks and hardened nozzle', () => {
+        CP.store.set('cp_printers', [{ id: 1, name: 'Printer 01', model: 'Bambu Lab X1-Carbon', nozzle: { type: 'brass' } }]);
+        CP.store.set('cp_maint_tasks', [
+          { id: 'task_1_bed_level', printerId: 1, key: 'bed_level', label: 'Bed leveling check', intervalDays: 1, lastDone: null }
+        ]);
+
+        const assigned = CP.maint.applyBambuRoutine(1);
+        assertEqual(assigned.length, 6, 'Has 6 official Bambu maintenance tasks');
+        const rodTask = assigned.find(t => t.key === 'bambu_carbon_rod');
+        assert(rodTask, 'Contains carbon rod task');
+        assertEqual(rodTask.intervalDays, 14, 'Carbon rod task interval is 14 days');
+
+        const pr = CP.store.get('cp_printers')[0];
+        assertEqual(pr.nozzle.type, 'hardened_steel', 'Nozzle upgraded to hardened steel for Bambu');
       });
 
       // =======================================================================
