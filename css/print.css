@@ -85,6 +85,18 @@
   margin: 8px 0 12px 0;
 }
 
+.quote-doc .doc-biz-name {
+  color: #0284c7;
+}
+
+.quote-doc .doc-title-badge {
+  background: #0284c7;
+}
+
+.quote-doc .doc-divider {
+  border-top-color: #0284c7;
+}
+
 .doc-grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
