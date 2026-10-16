@@ -21,12 +21,7 @@ CP.registerModule((function () {
       list = CP.defaults ? JSON.parse(JSON.stringify(CP.defaults.printers)) : [];
       if (list.length === 0) {
         for (let i = 1; i <= 10; i++) {
-          list.push({
-            id: i, name: `Printer ${String(i).padStart(2, '0')}`, model: 'Ender 3',
-            status: 'idle', statusNote: '', material: 'PLA', currentJob: null,
-            nozzle: { type: 'brass', installedAt: new Date().toISOString(), gramsExtruded: 0, abrasiveGramsExtruded: 0 },
-            octoprint: { url: '', apiKey: '' }
-          });
+          list.push({ id: i, name: `Printer ${String(i).padStart(2, '0')}`, model: 'Ender 3', status: 'idle', statusNote: '', material: 'PLA', currentJob: null, nozzle: { type: 'brass', installedAt: new Date().toISOString(), gramsExtruded: 0, abrasiveGramsExtruded: 0 }, octoprint: { url: '', apiKey: '' } });
         }
       }
     }
@@ -54,6 +49,7 @@ CP.registerModule((function () {
     }
 
     if (settings.production.printHoursPerDay < 1 || settings.production.printHoursPerDay > 24) errors.push('Print hours per day must be between 1 and 24.');
+    if (settings.production.postProcessDays < 0) errors.push('Post-processing buffer days cannot be negative.');
     if (settings.production.lowStockThresholdG < 0) errors.push('Low stock threshold cannot be negative.');
     if (settings.production.scrapTargetPct < 0 || settings.production.scrapTargetPct > 100) errors.push('Scrap target percentage must be 0% to 100%.');
     if (settings.production.toleranceMm < 0) errors.push('Dimensional tolerance cannot be negative.');
@@ -96,6 +92,7 @@ CP.registerModule((function () {
     const catRows = Object.entries(catDiscounts).map(([cat, val]) => `<div class="field"><label for="cfg-cat-${CP.util.esc(cat)}">${CP.util.esc(cat)} (%)</label><input type="number" step="1" min="0" max="100" id="cfg-cat-${CP.util.esc(cat)}" class="input cfg-cat-input" data-cat="${CP.util.esc(cat)}" value="${val}"></div>`).join('');
 
     return `
+      ${p.requiresOwnerConfirmation ? `<div class="banner banner-warning" style="margin-bottom: 16px; font-size: 13px;">⚠️ <strong>Pricing Calibration:</strong> Rates (PLA ₹4, ABS ₹5, TPU ₹6, 18% GST) reflect prelaunch benchmarks. Confirm final rates with business owner and CA before live invoicing.</div>` : ''}
       <div class="card">
         <div class="card-header">
           <div>
@@ -261,18 +258,11 @@ CP.registerModule((function () {
         <div style="font-size: 12px; line-height: 1.6; color: var(--text-muted); display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div style="background: var(--surface); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
             <strong style="color: var(--text);">🎋 Setting Up Bambu Lab LAN Mode:</strong>
-            <ol style="margin-left: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 4px;">
-              <li>On the printer screen: go to <em>Settings &gt; Network &gt; Turn ON "LAN Only Mode"</em>.</li>
-              <li>Note down the <strong>IP Address</strong>, <strong>LAN Access Code</strong>, and <strong>Serial Number</strong>.</li>
-              <li>Double-click <code>tools/run_bambu_bridge.bat</code> on this computer to start the lightweight local bridge on port 5005.</li>
-            </ol>
+            <ol style="margin-left: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 4px;"><li>Enable <em>Settings &gt; Network &gt; "LAN Only Mode"</em> on printer screen.</li><li>Note <strong>IP Address</strong>, <strong>LAN Access Code</strong>, and <strong>Serial Number</strong>.</li><li>Run <code>tools/run_bambu_bridge.bat</code> to start local bridge on port 5005.</li></ol>
           </div>
           <div style="background: var(--surface); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
             <strong style="color: var(--text);">🚀 Bambu Studio Slicer Handoff:</strong>
-            <ul style="margin-left: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 4px;">
-              <li>Click <strong>"🎋 Bambu"</strong> on any task in the Farm Board Pending Queue.</li>
-              <li>It instantly launches <strong>Bambu Studio</strong> and packages the part with preset layer and material settings.</li>
-            </ul>
+            <ul style="margin-left: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 4px;"><li>Click <strong>"🎋 Bambu"</strong> on Farm Board task to launch Bambu Studio with presets.</li></ul>
           </div>
         </div>
       </div>
@@ -322,12 +312,21 @@ CP.registerModule((function () {
             <div style="font-size: 14px; font-weight: 600; margin-top: 8px;">${meta.lastBackupAt ? CP.util.fmtDateTime(meta.lastBackupAt) : 'Never'}</div>
           </div>
         </div>
-        <div style="display: flex; gap: 12px; align-items: center; padding-top: 12px; border-top: 1px solid var(--border);">
-          <button type="button" id="btn-dev-seed" class="btn btn-secondary"><span>🌱</span><span>Demo Data</span></button>
-          <button type="button" id="btn-dev-reset" class="btn btn-danger"><span>⚠️</span><span>Reset All Data</span></button>
+        <div style="display: flex; gap: 12px; align-items: center; padding-top: 12px; border-top: 1px solid var(--border); flex-wrap: wrap;">
+          <button type="button" id="btn-dev-seed" class="btn btn-secondary"><span>🌱</span><span>Seed Demo Data</span></button>
+          <button type="button" id="btn-dev-safe-reset" class="btn btn-secondary" title="Clears operational orders and logs while strictly preserving business settings"><span>🧹</span><span>Safe Reset (Clear Operational Data)</span></button>
+          <button type="button" id="btn-dev-reset" class="btn btn-danger" title="Permanently wipes all local data after safety backup"><span>⚠️</span><span>Full Factory Reset</span></button>
         </div>
       </div>
     `;
+  }
+
+  function parseNum(val, fallback) {
+    if (val === null || val === undefined) return fallback;
+    const s = String(val).trim();
+    if (s === '') return fallback;
+    const n = Number(s);
+    return isNaN(n) ? fallback : n;
   }
 
   function readFormInputs(s) {
@@ -347,32 +346,32 @@ CP.registerModule((function () {
     const gstCheck = document.getElementById('cfg-gst-enabled');
     if (gstCheck) {
       s.pricing.gstEnabled = gstCheck.checked;
-      s.pricing.gstPct = Number(document.getElementById('cfg-gst-pct')?.value) || 0;
+      s.pricing.gstPct = parseNum(document.getElementById('cfg-gst-pct')?.value, 18);
       s.pricing.interState = !!document.getElementById('cfg-gst-interstate')?.checked;
-      s.pricing.minMarginPct = Number(document.getElementById('cfg-min-margin')?.value) || 0;
+      s.pricing.minMarginPct = parseNum(document.getElementById('cfg-min-margin')?.value, 40);
       s.pricing.layerMultiplier = {
-        "0.28": Number(document.getElementById('cfg-layer-028')?.value) || 1,
-        "0.20": Number(document.getElementById('cfg-layer-020')?.value) || 1,
-        "0.12": Number(document.getElementById('cfg-layer-012')?.value) || 1
+        "0.28": parseNum(document.getElementById('cfg-layer-028')?.value, 0.85),
+        "0.20": parseNum(document.getElementById('cfg-layer-020')?.value, 1.00),
+        "0.12": parseNum(document.getElementById('cfg-layer-012')?.value, 1.40)
       };
       s.pricing.ratePerGram = s.pricing.ratePerGram || {};
-      document.querySelectorAll('.cfg-rate-input').forEach(inp => { const m = inp.getAttribute('data-mat'); if (m) s.pricing.ratePerGram[m] = Number(inp.value) || 0; });
+      document.querySelectorAll('.cfg-rate-input').forEach(inp => { const m = inp.getAttribute('data-mat'); if (m) s.pricing.ratePerGram[m] = parseNum(inp.value, 4); });
       s.pricing.categoryDiscountPct = s.pricing.categoryDiscountPct || {};
-      document.querySelectorAll('.cfg-cat-input').forEach(inp => { const c = inp.getAttribute('data-cat'); if (c) s.pricing.categoryDiscountPct[c] = Number(inp.value) || 0; });
+      document.querySelectorAll('.cfg-cat-input').forEach(inp => { const c = inp.getAttribute('data-cat'); if (c) s.pricing.categoryDiscountPct[c] = parseNum(inp.value, 0); });
     }
     const gph028 = document.getElementById('cfg-gph-028');
     if (gph028) {
       s.production.gramsPerHour = {
-        "0.28": Number(gph028.value) || 15,
-        "0.20": Number(document.getElementById('cfg-gph-020')?.value) || 10,
-        "0.12": Number(document.getElementById('cfg-gph-012')?.value) || 6
+        "0.28": parseNum(gph028.value, 15),
+        "0.20": parseNum(document.getElementById('cfg-gph-020')?.value, 10),
+        "0.12": parseNum(document.getElementById('cfg-gph-012')?.value, 6)
       };
-      s.production.printHoursPerDay = Number(document.getElementById('cfg-hours-day')?.value) || 16;
-      s.production.postProcessDays = Number(document.getElementById('cfg-post-days')?.value) || 1;
-      s.production.lowStockThresholdG = Number(document.getElementById('cfg-low-stock')?.value) || 2000;
-      s.production.scrapTargetPct = Number(document.getElementById('cfg-scrap-target')?.value) || 5;
-      s.production.toleranceMm = Number(document.getElementById('cfg-tolerance')?.value) || 0.2;
-      s.production.nozzleLifeLimitG = Number(document.getElementById('cfg-nozzle-life')?.value) || 5000;
+      s.production.printHoursPerDay = parseNum(document.getElementById('cfg-hours-day')?.value, 16);
+      s.production.postProcessDays = parseNum(document.getElementById('cfg-post-days')?.value, 1);
+      s.production.lowStockThresholdG = parseNum(document.getElementById('cfg-low-stock')?.value, 2000);
+      s.production.scrapTargetPct = parseNum(document.getElementById('cfg-scrap-target')?.value, 5);
+      s.production.toleranceMm = parseNum(document.getElementById('cfg-tolerance')?.value, 0.2);
+      s.production.nozzleLifeLimitG = parseNum(document.getElementById('cfg-nozzle-life')?.value, 5000);
       const abrasive = [];
       document.querySelectorAll('.cfg-abrasive-cb:checked').forEach(cb => { const m = cb.getAttribute('data-mat'); if (m) abrasive.push(m); });
       s.production.abrasiveMaterials = abrasive;
@@ -474,20 +473,25 @@ CP.registerModule((function () {
         readFormInputs(tempSettings);
         saveConnectionsFromDOM(rootElement);
         const errors = validate(tempSettings);
-        if (errors.length > 0) {
-          CP.ui.toast(errors[0], 'danger');
-          return;
+        if (errors.length > 0) { CP.ui.toast(errors[0], 'danger'); return; }
+        try {
+          CP.store.set('cp_settings', tempSettings);
+          CP.ui.toast('Settings saved successfully!', 'success');
+        } catch (err) {
+          CP.ui.toast(`Failed to save settings: ${err.message || err}`, 'danger');
         }
-        CP.store.set('cp_settings', tempSettings);
-        CP.ui.toast('Settings saved successfully!', 'success');
       });
     }
 
     const saveConnBtn = rootElement.querySelector('#btn-save-connections');
     if (saveConnBtn) {
       saveConnBtn.addEventListener('click', () => {
-        saveConnectionsFromDOM(rootElement);
-        CP.ui.toast('Printer connections saved successfully!', 'success');
+        try {
+          saveConnectionsFromDOM(rootElement);
+          CP.ui.toast('Printer connections saved successfully!', 'success');
+        } catch (err) {
+          CP.ui.toast(`Failed to save connections: ${err.message || err}`, 'danger');
+        }
       });
     }
 
@@ -511,10 +515,7 @@ CP.registerModule((function () {
       btn.addEventListener('click', async () => {
         const id = Number(btn.getAttribute('data-printer-id')), fb = rootElement.querySelector(`#bambu-feedback-${id}`);
         if (!fb) return;
-        const ip = (rootElement.querySelector(`#bambu-ip-${id}`)?.value || '').trim();
-        const accessCode = (rootElement.querySelector(`#bambu-code-${id}`)?.value || '').trim();
-        const serial = (rootElement.querySelector(`#bambu-serial-${id}`)?.value || '').trim();
-        const bridgeUrl = (rootElement.querySelector(`#bambu-bridge-${id}`)?.value || '').trim() || 'http://127.0.0.1:5005';
+        const ip = (rootElement.querySelector(`#bambu-ip-${id}`)?.value || '').trim(), accessCode = (rootElement.querySelector(`#bambu-code-${id}`)?.value || '').trim(), serial = (rootElement.querySelector(`#bambu-serial-${id}`)?.value || '').trim(), bridgeUrl = (rootElement.querySelector(`#bambu-bridge-${id}`)?.value || '').trim() || 'http://127.0.0.1:5005';
         fb.className = 'bambu-test-feedback is-testing'; fb.textContent = 'Checking bridge & Bambu connection...';
         btn.disabled = true;
         const res = CP.bambu ? await CP.bambu.testConnection({ ip, accessCode, serial, bridgeUrl, id }) : { online: false, error: 'Bambu service uninitialized.' };
@@ -538,7 +539,8 @@ CP.registerModule((function () {
 
     const devSeedBtn = rootElement.querySelector('#btn-dev-seed');
     if (devSeedBtn) devSeedBtn.addEventListener('click', () => { if (CP.dev) CP.dev.seed(); });
-
+    const devSafeResetBtn = rootElement.querySelector('#btn-dev-safe-reset');
+    if (devSafeResetBtn) devSafeResetBtn.addEventListener('click', () => { if (CP.dev) CP.dev.safeReset(); });
     const devResetBtn = rootElement.querySelector('#btn-dev-reset');
     if (devResetBtn) devResetBtn.addEventListener('click', () => { if (CP.dev) CP.dev.reset(); });
   }

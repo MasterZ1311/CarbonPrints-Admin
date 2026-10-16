@@ -20,16 +20,29 @@ CP.pricing = {
     const material = part.material || 'PLA';
     const layer = String(part.layer || '0.20');
 
-    const pricingCfg = (settings && settings.pricing) ? settings.pricing : {};
-    const ratePerGramMap = pricingCfg.ratePerGram || {};
-    const layerMultMap = pricingCfg.layerMultiplier || {};
+    // Use snapshotted part rate if available, else settings
+    let rate;
+    if (part.ratePerGram !== undefined && part.ratePerGram !== null && part.ratePerGram !== '') {
+      rate = Number(part.ratePerGram);
+    } else {
+      const pricingCfg = (settings && settings.pricing) ? settings.pricing : {};
+      const ratePerGramMap = pricingCfg.ratePerGram || {};
+      rate = (ratePerGramMap[material] !== undefined)
+        ? Number(ratePerGramMap[material])
+        : 4;
+    }
 
-    const rate = (ratePerGramMap[material] !== undefined)
-      ? Number(ratePerGramMap[material])
-      : 4;
-    const layerMult = (layerMultMap[layer] !== undefined)
-      ? Number(layerMultMap[layer])
-      : 1;
+    // Use snapshotted layer multiplier if available, else settings
+    let layerMult;
+    if (part.layerMultiplier !== undefined && part.layerMultiplier !== null && part.layerMultiplier !== '') {
+      layerMult = Number(part.layerMultiplier);
+    } else {
+      const pricingCfg = (settings && settings.pricing) ? settings.pricing : {};
+      const layerMultMap = pricingCfg.layerMultiplier || {};
+      layerMult = (layerMultMap[layer] !== undefined)
+        ? Number(layerMultMap[layer])
+        : 1;
+    }
 
     const price = weightG * qty * rate * layerMult;
     return CP.util ? CP.util.round2(price) : Math.round(price * 100) / 100;
@@ -67,30 +80,40 @@ CP.pricing = {
 
   /**
    * Calculates financial totals and production estimates for an entire order.
+   * If the order already contains a snapshotted pricing configuration, preserves it
+   * unless options.forceReprice is true.
    * @param {Object} order - Order object containing customer, parts, pricing
    * @param {Object} settings - cp_settings object
+   * @param {Object} [options={}] - Calculation options
+   * @param {boolean} [options.forceReprice=false] - If true, strips part snapshots and re-evaluates against current settings
    * @returns {{
    *   subtotal: number,
    *   discountPct: number,
    *   discountAmt: number,
    *   taxable: number,
+   *   gstEnabled: boolean,
    *   gstPct: number,
    *   gstAmt: number,
    *   cgst: number,
    *   sgst: number,
    *   igst: number,
+   *   interState: boolean,
    *   total: number,
    *   advance: number,
    *   balance: number,
    *   totalPrintHours: number,
    *   longestPartHours: number,
-   *   turnaroundDays: number
+   *   turnaroundDays: number,
+   *   isSnapshotted: boolean
    * }}
    */
-  calcOrder(order, settings) {
+  calcOrder(order, settings, options = {}) {
     const parts = (order && Array.isArray(order.parts)) ? order.parts : [];
     const pricingCfg = (settings && settings.pricing) ? settings.pricing : {};
     const prodCfg = (settings && settings.production) ? settings.production : {};
+
+    const forceReprice = !!(options && options.forceReprice);
+    const isSnapshotted = !forceReprice && !!(order && order.pricing && order.pricing.isSnapshotted);
 
     // 1. Subtotal and print hours across parts
     let subtotal = 0;
@@ -98,7 +121,8 @@ CP.pricing = {
     let longestPartHours = 0;
 
     parts.forEach(p => {
-      const price = CP.pricing.partPrice(p, settings);
+      const partToCalc = forceReprice ? { ...p, ratePerGram: undefined, layerMultiplier: undefined } : p;
+      const price = CP.pricing.partPrice(partToCalc, settings);
       subtotal += price;
 
       const hours = CP.pricing.partPrintHours(p, settings);
@@ -131,14 +155,20 @@ CP.pricing = {
       CP.util ? CP.util.round2(subtotal - discountAmt) : Math.round((subtotal - discountAmt) * 100) / 100
     );
 
-    // 3. GST Calculation
-    const gstEnabled = !!pricingCfg.gstEnabled;
-    const gstPct = gstEnabled ? (Number(pricingCfg.gstPct) || 0) : 0;
+    // 3. GST Calculation (respect snapshot if present, else settings)
+    const gstEnabled = isSnapshotted
+      ? !!order.pricing.gstEnabled
+      : !!pricingCfg.gstEnabled;
+    const gstPct = gstEnabled
+      ? (isSnapshotted && order.pricing.gstPct !== undefined ? Number(order.pricing.gstPct) : (Number(pricingCfg.gstPct) || 0))
+      : 0;
     const gstAmt = gstEnabled
       ? (CP.util ? CP.util.round2((taxable * gstPct) / 100) : Math.round(((taxable * gstPct) / 100) * 100) / 100)
       : 0;
 
-    const interState = !!pricingCfg.interState;
+    const interState = isSnapshotted
+      ? !!order.pricing.interState
+      : !!pricingCfg.interState;
     let cgst = 0;
     let sgst = 0;
     let igst = 0;
@@ -164,7 +194,9 @@ CP.pricing = {
 
     // 5. Turnaround estimation
     const printHoursPerDay = Number(prodCfg.printHoursPerDay) || 16;
-    const postProcessDays = Number(prodCfg.postProcessDays) || 1;
+    const postProcessDays = (prodCfg.postProcessDays !== undefined && !isNaN(Number(prodCfg.postProcessDays)))
+      ? Number(prodCfg.postProcessDays)
+      : 1;
     const daySpeed = printHoursPerDay > 0 ? printHoursPerDay : 16;
     const rawDays = Math.ceil(longestPartHours / daySpeed) + postProcessDays;
     const turnaroundDays = Math.max(1, isNaN(rawDays) ? 1 : rawDays);
@@ -174,17 +206,20 @@ CP.pricing = {
       discountPct,
       discountAmt,
       taxable,
+      gstEnabled,
       gstPct,
       gstAmt,
       cgst,
       sgst,
       igst,
+      interState,
       total,
       advance,
       balance,
       totalPrintHours,
       longestPartHours,
-      turnaroundDays
+      turnaroundDays,
+      isSnapshotted: true
     };
   },
 

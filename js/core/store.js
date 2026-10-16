@@ -57,7 +57,7 @@ CP.store = (function () {
     const msg = `Data error: Storage for "${key}" was corrupted. Recovered using fallback.`;
     if (typeof window !== 'undefined' && window.CP && window.CP.ui && typeof window.CP.ui.toast === 'function' && document.getElementById('toast-container')) {
       window.CP.ui.toast(msg, 'warning');
-    } else if (typeof window !== 'undefined') {
+    } else if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener('DOMContentLoaded', () => {
         if (window.CP && window.CP.ui && typeof window.CP.ui.toast === 'function') {
           window.CP.ui.toast(msg, 'warning');
@@ -90,8 +90,23 @@ CP.store = (function () {
     },
 
     /**
+     * Checks if key exists in storage (even if falsy or unparsed).
+     * @param {string} key
+     * @returns {boolean}
+     */
+    has(key) {
+      if (isMemoryMode) return memStore.has(key);
+      try {
+        return localStorage.getItem(key) !== null;
+      } catch (e) {
+        return false;
+      }
+    },
+
+    /**
      * Retrieves an item from storage and parses JSON.
      * In case of corrupted JSON, catches error, notifies user via toast, and returns fallback.
+     * Preserves raw data in localStorage without deleting it.
      * @param {string} key - localStorage key
      * @param {any} fallback - Fallback if key does not exist or parse fails
      * @returns {any}
@@ -121,25 +136,42 @@ CP.store = (function () {
      * Stores an item as JSON in storage.
      * @param {string} key - localStorage key
      * @param {any} value - Value to persist
+     * @returns {boolean} true on success
+     * @throws {Error} QuotaExceededError or StorageError on write failure
      */
     set(key, value) {
       if (isMemoryMode) {
         memStore.set(key, JSON.parse(JSON.stringify(value)));
         notify(key, value);
-        return;
+        return true;
       }
 
       try {
         const raw = JSON.stringify(value);
         localStorage.setItem(key, raw);
         notify(key, value);
+        return true;
       } catch (err) {
         console.error(`[CP.store] Failed to save key "${key}":`, err);
+        const isQuota = err && (
+          err.name === 'QuotaExceededError' ||
+          err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+          err.code === 22 ||
+          err.code === 1014
+        );
+        const msg = isQuota
+          ? `Storage quota exceeded while saving "${key}". Please backup and clear old data.`
+          : `Storage write failed for "${key}": ${err.message || err}`;
+
         if (CP.ui && typeof CP.ui.toast === 'function') {
-          CP.ui.toast("Storage quota exceeded! Please backup and clear old data.", "danger");
-        } else {
-          alert("Storage quota exceeded! Please backup and clear old data.");
+          CP.ui.toast(msg, "danger");
         }
+
+        const storageError = new Error(msg);
+        storageError.isQuota = isQuota;
+        storageError.originalError = err;
+        storageError.storageKey = key;
+        throw storageError;
       }
     },
 
@@ -296,49 +328,124 @@ CP.store = (function () {
     },
 
     /**
-     * Seeds initial default collections if missing, and deep-merges settings schema.
+     * Executes versioned, idempotent data migrations.
+     */
+    runMigrations() {
+      const meta = CP.store.get('cp_meta', { schemaVersion: 1 });
+      const currentVer = Number(meta.schemaVersion) || 1;
+
+      if (currentVer < 2) {
+        // Migration v1 -> v2: Ensure existing orders have snapshotted pricing and line totals
+        try {
+          const orders = CP.store.get('cp_orders', []);
+          let changed = false;
+          if (Array.isArray(orders) && orders.length > 0) {
+            const settings = CP.store.get('cp_settings', {});
+            const pricingCfg = settings.pricing || {};
+            orders.forEach(order => {
+              if (!order) return;
+              order.pricing = order.pricing || {};
+              if (!order.pricing.isSnapshotted) {
+                changed = true;
+                order.pricing.isSnapshotted = true;
+                if (order.pricing.gstEnabled === undefined) {
+                  order.pricing.gstEnabled = (Number(order.pricing.gstAmt) > 0);
+                }
+                if (order.pricing.gstPct === undefined) {
+                  order.pricing.gstPct = Number(pricingCfg.gstPct) || 18;
+                }
+              }
+              (order.parts || []).forEach(p => {
+                if (p) {
+                  if (p.ratePerGram === undefined) {
+                    p.ratePerGram = pricingCfg.ratePerGram?.[p.material] ?? 4;
+                    changed = true;
+                  }
+                  if (p.layerMultiplier === undefined) {
+                    p.layerMultiplier = pricingCfg.layerMultiplier?.[p.layer] ?? 1;
+                    changed = true;
+                  }
+                  if (p.linePrice === undefined) {
+                    const w = Number(p.weightG) || 0;
+                    const q = Number(p.qty) || 1;
+                    p.linePrice = Math.round(w * q * p.ratePerGram * p.layerMultiplier * 100) / 100;
+                    changed = true;
+                  }
+                }
+              });
+            });
+            if (changed) {
+              CP.store.set('cp_orders', orders);
+            }
+          }
+          meta.schemaVersion = 2;
+          CP.store.set('cp_meta', meta);
+        } catch (mErr) {
+          console.error('[CP.store] Migration to v2 failed:', mErr);
+        }
+      }
+    },
+
+    /**
+     * Seeds initial default collections if missing, deep-merges settings schema,
+     * avoids destructive recovery on corrupted files, and executes idempotent migrations.
      */
     init() {
       const defs = CP.defaults || {};
 
-      // 1. Settings
+      const safeInitKey = (key, defaultVal) => {
+        if (!CP.store.has(key)) {
+          CP.store.set(key, defaultVal);
+        } else {
+          // Key exists. If it parses as null, verify it isn't corrupted non-empty data before overwriting!
+          try {
+            const parsed = CP.store.get(key, null);
+            if (parsed === null) {
+              console.warn(`[CP.store] Key "${key}" exists with unparseable data. Preserving raw data to avoid silent loss.`);
+            }
+          } catch (e) {
+            console.error(`[CP.store] Parse check failed on "${key}":`, e);
+          }
+        }
+      };
+
+      // 1. Settings (preserve user settings via deepMerge)
       const existingSettings = CP.store.get('cp_settings', null);
       if (!existingSettings) {
-        CP.store.set('cp_settings', defs.settings || {});
+        if (!CP.store.has('cp_settings')) {
+          CP.store.set('cp_settings', defs.settings || {});
+        }
       } else {
         const mergedSettings = deepMerge(defs.settings || {}, existingSettings);
         CP.store.set('cp_settings', mergedSettings);
       }
 
       // 2. Printers
-      if (CP.store.get('cp_printers', null) === null) {
-        CP.store.set('cp_printers', defs.printers || []);
-      }
+      safeInitKey('cp_printers', defs.printers || []);
 
       // 3. Maintenance tasks
-      if (CP.store.get('cp_maint_tasks', null) === null) {
-        CP.store.set('cp_maint_tasks', defs.maintTasks || []);
-      }
+      safeInitKey('cp_maint_tasks', defs.maintTasks || []);
 
       // 4. Counters
-      if (CP.store.get('cp_counters', null) === null) {
-        CP.store.set('cp_counters', defs.counters || {});
-      }
+      safeInitKey('cp_counters', defs.counters || {});
 
       // 5. Metadata
-      const meta = CP.store.get('cp_meta', null);
-      if (!meta) {
-        CP.store.set('cp_meta', defs.meta || { schemaVersion: 1, lastBackupAt: null });
-      }
+      safeInitKey('cp_meta', defs.meta || { schemaVersion: 2, lastBackupAt: null });
 
-      // 6. Initialize other arrays if not present
-      if (CP.store.get('cp_orders', null) === null) CP.store.set('cp_orders', []);
-      if (CP.store.get('cp_spools', null) === null) CP.store.set('cp_spools', []);
-      if (CP.store.get('cp_ledger', null) === null) CP.store.set('cp_ledger', []);
-      if (CP.store.get('cp_supplier_prices', null) === null) CP.store.set('cp_supplier_prices', []);
-      if (CP.store.get('cp_scrap', null) === null) CP.store.set('cp_scrap', []);
-      if (CP.store.get('cp_qc', null) === null) CP.store.set('cp_qc', []);
-      if (CP.store.get('cp_maint_log', null) === null) CP.store.set('cp_maint_log', []);
+      // 6. Other collections
+      safeInitKey('cp_orders', []);
+      safeInitKey('cp_expenses', []);
+      safeInitKey('cp_customers', []);
+      safeInitKey('cp_part_templates', []);
+      safeInitKey('cp_spools', []);
+      safeInitKey('cp_ledger', []);
+      safeInitKey('cp_supplier_prices', []);
+      safeInitKey('cp_scrap', []);
+      safeInitKey('cp_qc', []);
+      safeInitKey('cp_maint_log', []);
+
+      // 7. Run idempotent migrations
+      CP.store.runMigrations();
     }
   };
 })();

@@ -274,12 +274,25 @@ CP.util = {
     if (kind === 'order') {
       counterKey = `order:${year}`;
       prefix = `CP-${year}-`;
+    } else if (kind === 'quote') {
+      counterKey = `quote:${year}`;
+      prefix = `CP-QT-${year}-`;
     } else if (kind === 'invoice') {
-      counterKey = `invoice:${fy}`;
-      prefix = `CP/${fy}/`;
+      const settings = (CP.store && typeof CP.store.get === 'function')
+        ? CP.store.get('cp_settings', {})
+        : {};
+      const rawPrefix = (settings && settings.business && settings.business.invoicePrefix)
+        ? String(settings.business.invoicePrefix).trim().replace(/[\/\-]+$/, '')
+        : 'CP';
+      const invPrefix = rawPrefix || 'CP';
+      counterKey = `invoice:${invPrefix}:${fy}`;
+      prefix = `${invPrefix}/${fy}/`;
     } else if (kind === 'challan') {
       counterKey = `challan:${fy}`;
       prefix = `DC/${fy}/`;
+    } else if (kind === 'expense') {
+      counterKey = `expense:${year}`;
+      prefix = `CP-EXP-${year}-`;
     } else {
       counterKey = `${kind}:${year}`;
       prefix = `${kind.toUpperCase()}-${year}-`;
@@ -289,13 +302,31 @@ CP.util = {
       ? CP.store.get('cp_counters', {})
       : {};
 
-    const currentVal = Number(counters[counterKey]) || 0;
+    let currentVal = Number(counters[counterKey]);
+    if (isNaN(currentVal)) {
+      if (kind === 'invoice' && counters[`invoice:${fy}`] !== undefined) {
+        currentVal = Number(counters[`invoice:${fy}`]);
+      } else {
+        currentVal = 0;
+      }
+    }
     let nextVal = currentVal + 1;
 
-    // Guard against duplicate IDs if data was imported
-    if (kind === 'order' && CP.store && typeof CP.store.get === 'function') {
+    // Guard against duplicate IDs if data was imported or reset
+    if (CP.store && typeof CP.store.get === 'function') {
       const existingOrders = CP.store.get('cp_orders', []) || [];
-      const existingIds = new Set(existingOrders.map(o => o && o.id).filter(Boolean));
+      let existingIds = new Set();
+      if (kind === 'order' || kind === 'quote') {
+        existingIds = new Set(existingOrders.map(o => o && o.id).filter(Boolean));
+      } else if (kind === 'invoice') {
+        existingIds = new Set(existingOrders.map(o => o && o.invoiceNo).filter(Boolean));
+      } else if (kind === 'challan') {
+        existingIds = new Set(existingOrders.map(o => o && o.challanNo).filter(Boolean));
+      } else if (kind === 'expense') {
+        const existingExp = CP.store.get('cp_expenses', []) || [];
+        existingIds = new Set(existingExp.map(e => e && e.id).filter(Boolean));
+      }
+
       while (existingIds.has(`${prefix}${CP.util.pad(nextVal, 4)}`)) {
         nextVal++;
       }
@@ -304,7 +335,11 @@ CP.util = {
     counters[counterKey] = nextVal;
 
     if (CP.store && typeof CP.store.set === 'function') {
-      CP.store.set('cp_counters', counters);
+      try {
+        CP.store.set('cp_counters', counters);
+      } catch (e) {
+        console.warn('[CP.util.nextId] Could not persist counter update:', e);
+      }
     }
 
     return `${prefix}${CP.util.pad(nextVal, 4)}`;

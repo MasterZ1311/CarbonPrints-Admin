@@ -25,18 +25,19 @@ CP.defaults = (function () {
     pricing: {
       ratePerGram: {
         PLA: 4,
-        ABS: 4,
-        TPU: 4
+        ABS: 5,
+        TPU: 6
       },
       layerMultiplier: {
-        "0.28": 1,
-        "0.20": 1,
-        "0.12": 1
+        "0.28": 0.85,
+        "0.20": 1.00,
+        "0.12": 1.40
       },
-      gstEnabled: false,
+      gstEnabled: true,
       gstPct: 18,
       interState: false,
       minMarginPct: 40,
+      requiresOwnerConfirmation: true,
       categoryDiscountPct: {
         "College Project": 0,
         "Hardware Startup R&D": 0,
@@ -135,7 +136,7 @@ CP.defaults = (function () {
   // 4. Counters, Metadata & Empty collections
   const counters = {};
   const meta = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     lastBackupAt: null
   };
 
