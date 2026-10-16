@@ -17,7 +17,8 @@ CP.data = (function () {
       scrap: (CP.store.get('cp_scrap', []) || []).length,
       qc: (CP.store.get('cp_qc', []) || []).length,
       maintLog: (CP.store.get('cp_maint_log', []) || []).length,
-      ledger: (CP.store.get('cp_ledger', []) || []).length
+      ledger: (CP.store.get('cp_ledger', []) || []).length,
+      expenses: (CP.store.get('cp_expenses', []) || []).length
     };
   }
 
@@ -69,7 +70,7 @@ CP.data = (function () {
     if (!appName.toLowerCase().includes('carbonprints')) {
       return { valid: false, error: 'Invalid backup: Header does not identify as CarbonPrints Company OS.' };
     }
-    const known = ['cp_orders', 'cp_spools', 'cp_settings', 'cp_printers', 'counts', '_meta'];
+    const known = ['cp_orders', 'cp_spools', 'cp_settings', 'cp_printers', 'cp_expenses', 'counts', '_meta'];
     if (!known.some(k => k in json || (json.data && k in json.data))) {
       return { valid: false, error: 'Invalid backup: No recognized CarbonPrints database keys found.' };
     }
@@ -82,7 +83,8 @@ CP.data = (function () {
       scrap: rc.scrap !== undefined ? rc.scrap : (Array.isArray(json.cp_scrap) ? json.cp_scrap.length : 0),
       qc: rc.qc !== undefined ? rc.qc : (Array.isArray(json.cp_qc) ? json.cp_qc.length : 0),
       maintLog: rc.maintLog !== undefined ? rc.maintLog : (Array.isArray(json.cp_maint_log) ? json.cp_maint_log.length : 0),
-      ledger: rc.ledger !== undefined ? rc.ledger : (Array.isArray(json.cp_ledger) ? json.cp_ledger.length : 0)
+      ledger: rc.ledger !== undefined ? rc.ledger : (Array.isArray(json.cp_ledger) ? json.cp_ledger.length : 0),
+      expenses: rc.expenses !== undefined ? rc.expenses : (Array.isArray(json.cp_expenses) ? json.cp_expenses.length : 0)
     };
     return {
       valid: true,
@@ -113,9 +115,10 @@ CP.data = (function () {
     Object.keys(root).forEach(k => { if (k.startsWith('cp_')) incoming[k] = root[k]; });
 
     if (mode === 'replace') {
+      if (incoming.cp_expenses === undefined) incoming.cp_expenses = [];
       CP.store.importAll(incoming, 'replace');
     } else {
-      ['cp_orders', 'cp_spools', 'cp_scrap', 'cp_qc', 'cp_maint_log', 'cp_ledger', 'cp_supplier_prices'].forEach(k => {
+      ['cp_orders', 'cp_spools', 'cp_scrap', 'cp_qc', 'cp_maint_log', 'cp_ledger', 'cp_supplier_prices', 'cp_expenses'].forEach(k => {
         const existing = CP.store.get(k, []) || [];
         const inArr = Array.isArray(incoming[k]) ? incoming[k] : [];
         const existingIds = new Set(existing.map(x => x && x.id).filter(Boolean));
@@ -147,16 +150,11 @@ CP.data = (function () {
     if (start || end) orders = orders.filter(o => isInRange(o.createdAt || o.date, start, end));
     const cols = [
       { key: 'id', label: 'Order ID' }, { key: 'date', label: 'Date', render: o => (o.createdAt || '').slice(0, 10) },
-      { key: 'customer', label: 'Customer Name', render: o => o.customer?.name || '' },
-      { key: 'phone', label: 'Phone', render: o => o.customer?.phone || '' },
-      { key: 'category', label: 'Category', render: o => o.customer?.category || '' },
-      { key: 'status', label: 'Status', render: o => (o.status || '').toUpperCase() },
-      { key: 'subtotal', label: 'Subtotal (₹)', render: o => (o.pricing?.subtotal || 0).toFixed(2) },
-      { key: 'discount', label: 'Discount (₹)', render: o => (o.pricing?.discountAmt || 0).toFixed(2) },
-      { key: 'gst', label: 'GST (₹)', render: o => (o.pricing?.gstAmt || 0).toFixed(2) },
-      { key: 'total', label: 'Total (₹)', render: o => (o.pricing?.total || 0).toFixed(2) },
-      { key: 'paid', label: 'Paid (₹)', render: o => (o.payment?.paidAmount || 0).toFixed(2) },
-      { key: 'balance', label: 'Balance (₹)', render: o => Math.max(0, (o.pricing?.total || 0) - (o.payment?.paidAmount || 0)).toFixed(2) },
+      { key: 'customer', label: 'Customer Name', render: o => o.customer?.name || '' }, { key: 'phone', label: 'Phone', render: o => o.customer?.phone || '' },
+      { key: 'category', label: 'Category', render: o => o.customer?.category || '' }, { key: 'status', label: 'Status', render: o => (o.status || '').toUpperCase() },
+      { key: 'subtotal', label: 'Subtotal (₹)', render: o => (o.pricing?.subtotal || 0).toFixed(2) }, { key: 'discount', label: 'Discount (₹)', render: o => (o.pricing?.discountAmt || 0).toFixed(2) },
+      { key: 'gst', label: 'GST (₹)', render: o => (o.pricing?.gstAmt || 0).toFixed(2) }, { key: 'total', label: 'Total (₹)', render: o => (o.pricing?.total || 0).toFixed(2) },
+      { key: 'paid', label: 'Paid (₹)', render: o => (o.payment?.paidAmount || 0).toFixed(2) }, { key: 'balance', label: 'Balance (₹)', render: o => Math.max(0, (o.pricing?.total || 0) - (o.payment?.paidAmount || 0)).toFixed(2) },
       { key: 'invoiceNo', label: 'Invoice No', render: o => o.invoiceNo || '' }
     ];
     const csv = CP.csv.toCSV(orders, cols);
@@ -220,8 +218,7 @@ CP.data = (function () {
       { key: 'brand', label: 'Brand' }, { key: 'supplier', label: 'Vendor / Supplier' },
       { key: 'purchasedAt', label: 'Purchase Date', render: s => (s.purchasedAt || '').slice(0, 10) },
       { key: 'costINR', label: 'Cost (₹)', render: s => (s.costINR || 0).toFixed(2) },
-      { key: 'initialG', label: 'Initial Weight (g)' }, { key: 'remainingG', label: 'Remaining Weight (g)' },
-      { key: 'status', label: 'Status' },
+      { key: 'initialG', label: 'Initial Weight (g)' }, { key: 'remainingG', label: 'Remaining Weight (g)' }, { key: 'status', label: 'Status' },
       { key: 'loadedOnPrinterId', label: 'Loaded Machine', render: s => s.loadedOnPrinterId ? `Printer ${String(s.loadedOnPrinterId).padStart(2, '0')}` : 'None' }
     ];
     const csv = CP.csv.toCSV(spools, cols);
@@ -233,9 +230,9 @@ CP.data = (function () {
     let ledger = CP.store.get('cp_ledger', []) || [];
     if (start || end) ledger = ledger.filter(l => isInRange(l.ts, start, end));
     const cols = [
-      { key: 'date', label: 'Date', render: l => (l.ts || '').slice(0, 10) },
-      { key: 'spoolId', label: 'Spool ID' }, { key: 'deltaG', label: 'Weight Change (g)' },
-      { key: 'reason', label: 'Reason / Type' }, { key: 'orderId', label: 'Order Ref', render: l => l.orderId || '' },
+      { key: 'date', label: 'Date', render: l => (l.ts || '').slice(0, 10) }, { key: 'spoolId', label: 'Spool ID' },
+      { key: 'deltaG', label: 'Weight Change (g)' }, { key: 'reason', label: 'Reason / Type' },
+      { key: 'orderId', label: 'Order Ref', render: l => l.orderId || '' },
       { key: 'printerId', label: 'Machine', render: l => l.printerId ? `Printer ${String(l.printerId).padStart(2, '0')}` : '' },
       { key: 'note', label: 'Notes' }
     ];
@@ -290,15 +287,22 @@ CP.data = (function () {
     return csv;
   }
 
+  function exportExpensesCSV(start, end) {
+    if (CP.expenses && typeof CP.expenses.exportCSV === 'function') {
+      let list = CP.expenses.getAll();
+      if (start || end) list = list.filter(e => isInRange(e.date, start, end));
+      return CP.expenses.exportCSV(list);
+    }
+    return '';
+  }
+
   function exportSalesRegisterCSV(start, end) {
     let orders = (CP.store.get('cp_orders', []) || []).filter(o => o.status !== 'cancelled' && o.status !== 'quote');
     if (start || end) orders = orders.filter(o => isInRange(o.createdAt || o.date, start, end));
 
     const rows = orders.map(o => {
       const taxable = (o.pricing?.subtotal || 0) - (o.pricing?.discountAmt || 0);
-      const gstAmt = o.pricing?.gstAmt || 0;
-      const isInter = o.pricing?.interState || false;
-      const total = o.pricing?.total || 0;
+      const gstAmt = o.pricing?.gstAmt || 0, isInter = o.pricing?.interState || false, total = o.pricing?.total || 0;
       return {
         voucherDate: (o.createdAt || '').slice(0, 10), voucherNumber: o.invoiceNo || o.id,
         partyName: o.customer?.name || '', partyPhone: o.customer?.phone || '',
@@ -356,34 +360,22 @@ CP.data = (function () {
     rootElement.innerHTML = `
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
-          <div>
-            <h2 class="card-title">💾 Data &amp; Backup</h2>
-            <div class="card-subtitle">Offline database backups, Tally/Zoho accounting registers, and operational CSV reports</div>
-          </div>
-          <span class="badge ${meta.lastBackupAt ? 'badge-confirmed' : 'badge-danger'}">
-            ${meta.lastBackupAt ? `Last Backup: ${CP.util.esc(lastBackupStr)}` : '⚠️ No Backup Taken'}
-          </span>
+          <div><h2 class="card-title">💾 Data &amp; Backup</h2><div class="card-subtitle">Offline database backups, Tally/Zoho accounting registers, and operational CSV reports</div></div>
+          <span class="badge ${meta.lastBackupAt ? 'badge-confirmed' : 'badge-danger'}">${meta.lastBackupAt ? `Last Backup: ${CP.util.esc(lastBackupStr)}` : '⚠️ No Backup Taken'}</span>
         </div>
         <div class="data-grid-2">
           <div class="data-box">
             <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">💽 Browser Storage Meter</h3>
             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; color: var(--text-muted);">
-              <span>Database: <strong>${usage.kb} KB</strong> / ${usage.maxMb.toFixed(1)} MB</span>
-              <span><strong>${usage.pct}%</strong> quota</span>
+              <span>Database: <strong>${usage.kb} KB</strong> / ${usage.maxMb.toFixed(1)} MB</span><span><strong>${usage.pct}%</strong> quota</span>
             </div>
-            <div class="storage-meter-bar">
-              <div class="storage-meter-fill ${usage.isWarning ? 'danger' : 'success'}" style="width: ${usage.pct}%;"></div>
-            </div>
-            ${usage.isWarning ? '<div class="banner banner-danger" style="margin-top: 10px; padding: 6px 10px; font-size: 12px;">⚠️ Storage quota warning: Database is over 70% full. Download a full backup and clear older logs.</div>' : '<div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">Estimated against standard 5.0 MB browser storage quota.</div>'}
+            <div class="storage-meter-bar"><div class="storage-meter-fill ${usage.isWarning ? 'danger' : 'success'}" style="width: ${usage.pct}%;"></div></div>
+            ${usage.isWarning ? '<div class="banner banner-danger" style="margin-top: 10px; padding: 6px 10px; font-size: 12px;">⚠️ Storage quota warning: Database is over 70% full. Download a full backup.</div>' : '<div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">Estimated against standard 5.0 MB browser storage quota.</div>'}
           </div>
           <div class="data-box help-box">
             <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">🔒 Offline-First Architecture</h3>
-            <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 6px;">
-              Data is stored in this browser only. To move to another computer, download a backup and restore it there.
-            </p>
-            <p style="font-size: 12px; color: var(--brand); font-weight: 600; margin: 0;">
-              💡 Tip: Upload the downloaded JSON backup to your company Google Drive manually for safe off-site preservation.
-            </p>
+            <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 6px;">Data is stored in this browser only. To move to another computer, download a backup and restore it there.</p>
+            <p style="font-size: 12px; color: var(--brand); font-weight: 600; margin: 0;">💡 Tip: Upload the downloaded JSON backup to your company Google Drive manually for safe off-site preservation.</p>
           </div>
         </div>
       </div>
@@ -408,14 +400,9 @@ CP.data = (function () {
 
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
-          <div>
-            <h3 class="card-title">🧾 Accounting Export (Tally / Zoho Friendly)</h3>
-            <div class="card-subtitle">Sales vouchers and receipt entries structured for Indian accounting software</div>
-          </div>
+          <div><h3 class="card-title">🧾 Accounting Export (Tally / Zoho Friendly)</h3><div class="card-subtitle">Sales vouchers and receipt entries structured for Indian accounting software</div></div>
         </div>
-        <div class="banner banner-info" style="margin: 0 20px 14px 20px;">
-          ℹ️ <strong>Accountant Notice:</strong> Column mapping may need adjusting for your accountant's import template.
-        </div>
+        <div class="banner banner-info" style="margin: 0 20px 14px 20px;">ℹ️ <strong>Accountant Notice:</strong> Column mapping may need adjusting for your accountant's import template.</div>
         <div style="display: flex; gap: 12px; padding: 0 20px 16px 20px; flex-wrap: wrap;">
           <button class="btn btn-primary" id="btn-export-sales-register">📊 Export Sales Register CSV</button>
           <button class="btn btn-secondary" id="btn-export-receipts">🧾 Export Receipts Register CSV</button>
@@ -424,27 +411,19 @@ CP.data = (function () {
 
       <div class="card">
         <div class="card-header">
-          <div>
-            <h3 class="card-title">📑 Operational CSV Data Exports</h3>
-            <div class="card-subtitle">Export granular raw tables with UTF-8 BOM encoding for Excel and Google Sheets</div>
-          </div>
+          <div><h3 class="card-title">📑 Operational CSV Data Exports</h3><div class="card-subtitle">Export granular raw tables with UTF-8 BOM encoding for Excel and Google Sheets</div></div>
         </div>
         <div style="padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--surface-alt); margin: 0 20px 16px 20px; border-radius: var(--radius); border: 1px solid var(--border);">
           <span style="font-weight: 600; font-size: 12px;">Optional Date Filter:</span>
-          <div style="display: flex; align-items: center; gap: 4px;">
-            <label for="csv-date-start" style="font-size: 11px; color: var(--text-muted);">From:</label>
-            <input type="date" id="csv-date-start" class="form-control" style="width: auto; padding: 2px 6px; font-size: 12px;">
-          </div>
-          <div style="display: flex; align-items: center; gap: 4px;">
-            <label for="csv-date-end" style="font-size: 11px; color: var(--text-muted);">To:</label>
-            <input type="date" id="csv-date-end" class="form-control" style="width: auto; padding: 2px 6px; font-size: 12px;">
-          </div>
+          <div style="display: flex; align-items: center; gap: 4px;"><label for="csv-date-start" style="font-size: 11px; color: var(--text-muted);">From:</label><input type="date" id="csv-date-start" class="form-control" style="width: auto; padding: 2px 6px; font-size: 12px;"></div>
+          <div style="display: flex; align-items: center; gap: 4px;"><label for="csv-date-end" style="font-size: 11px; color: var(--text-muted);">To:</label><input type="date" id="csv-date-end" class="form-control" style="width: auto; padding: 2px 6px; font-size: 12px;"></div>
           <button class="btn btn-sm btn-outline" id="btn-csv-clear-date">Clear Range</button>
         </div>
         <div class="data-export-grid">
           <div class="data-export-card"><div><div class="data-export-title">📦 Orders</div><div class="data-export-desc">One row per order with pricing, GST, and balances (${counts.orders} records)</div></div><button class="btn btn-sm btn-secondary" id="btn-csv-orders">Download CSV</button></div>
           <div class="data-export-card"><div><div class="data-export-title">🧩 Order Lines (Parts)</div><div class="data-export-desc">One row per 3D printed component, material, layer &amp; infill</div></div><button class="btn btn-sm btn-secondary" id="btn-csv-order-lines">Download CSV</button></div>
           <div class="data-export-card"><div><div class="data-export-title">💳 Payments</div><div class="data-export-desc">One row per payment transaction with UPI/bank reference</div></div><button class="btn btn-sm btn-secondary" id="btn-csv-payments">Download CSV</button></div>
+          <div class="data-export-card"><div><div class="data-export-title">💸 Expenses</div><div class="data-export-desc">Operational expenditure, vendors, categories and modes (${counts.expenses || 0} records)</div></div><button class="btn btn-sm btn-secondary" id="btn-csv-expenses">Download CSV</button></div>
           <div class="data-export-card"><div><div class="data-export-title">🧵 Spools</div><div class="data-export-desc">Filament inventory, remaining grams, and costs (${counts.spools} spools)</div></div><button class="btn btn-sm btn-secondary" id="btn-csv-spools">Download CSV</button></div>
           <div class="data-export-card"><div><div class="data-export-title">📒 Stock Ledger</div><div class="data-export-desc">Gram-level audit trail for prints, scraps, and purchases (${counts.ledger} entries)</div></div><button class="btn btn-sm btn-secondary" id="btn-csv-ledger">Download CSV</button></div>
           <div class="data-export-card"><div><div class="data-export-title">🗑️ Scrap Log</div><div class="data-export-desc">Failed prints, causes, wasted grams, and monetary loss (${counts.scrap} entries)</div></div><button class="btn btn-sm btn-secondary" id="btn-csv-scrap">Download CSV</button></div>
@@ -490,9 +469,9 @@ CP.data = (function () {
 
     [
       ['#btn-csv-orders', exportOrdersCSV], ['#btn-csv-order-lines', exportOrderLinesCSV],
-      ['#btn-csv-payments', exportPaymentsCSV], ['#btn-csv-spools', exportSpoolsCSV],
-      ['#btn-csv-ledger', exportStockLedgerCSV], ['#btn-csv-scrap', exportScrapCSV],
-      ['#btn-csv-qc', exportQCCSV], ['#btn-csv-maint', exportMaintCSV]
+      ['#btn-csv-payments', exportPaymentsCSV], ['#btn-csv-expenses', exportExpensesCSV],
+      ['#btn-csv-spools', exportSpoolsCSV], ['#btn-csv-ledger', exportStockLedgerCSV],
+      ['#btn-csv-scrap', exportScrapCSV], ['#btn-csv-qc', exportQCCSV], ['#btn-csv-maint', exportMaintCSV]
     ].forEach(([sel, fn]) => {
       const el = root.querySelector(sel);
       if (el) el.addEventListener('click', () => { const df = getDateFilter(); fn(df.start, df.end); });
@@ -525,6 +504,7 @@ CP.data = (function () {
             <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;">
               <span class="badge badge-confirmed">${val.counts.orders} Orders</span>
               <span class="badge badge-confirmed">${val.counts.spools} Spools</span>
+              <span class="badge badge-confirmed">${val.counts.expenses || 0} Expenses</span>
               <span class="badge badge-confirmed">${val.counts.scrap} Scrap</span>
               <span class="badge badge-confirmed">${val.counts.qc} QC</span>
               <span class="badge badge-confirmed">${val.counts.maintLog} Maint Logs</span>
@@ -580,7 +560,7 @@ CP.data = (function () {
   return {
     render, destroy() { activeContainer = null; selectedBackupObj = null; },
     getCounts, getStorageUsage, exportFullBackup, validateBackup, restoreBackup,
-    exportOrdersCSV, exportOrderLinesCSV, exportPaymentsCSV, exportSpoolsCSV,
+    exportOrdersCSV, exportOrderLinesCSV, exportPaymentsCSV, exportExpensesCSV, exportSpoolsCSV,
     exportStockLedgerCSV, exportScrapCSV, exportQCCSV, exportMaintCSV,
     exportSalesRegisterCSV, exportReceiptsCSV
   };
@@ -594,3 +574,4 @@ CP.registerModule({
   render: CP.data.render,
   destroy: CP.data.destroy
 });
+

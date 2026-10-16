@@ -26,9 +26,7 @@ CP.registerModule((function () {
     if (!list || !Array.isArray(list) || list.length === 0) {
       list = CP.defaults ? JSON.parse(JSON.stringify(CP.defaults.printers)) : [];
       if (list.length === 0) {
-        for (let i = 1; i <= 10; i++) {
-          list.push({ id: i, name: `Printer ${CP.util.pad(i, 2)}`, model: 'Ender 3', status: 'idle', statusNote: '', material: 'PLA', currentJob: null, nozzle: { type: 'brass', installedAt: new Date().toISOString(), gramsExtruded: 0, abrasiveGramsExtruded: 0 }, octoprint: { url: '', apiKey: '' } });
-        }
+        for (let i = 1; i <= 10; i++) list.push({ id: i, name: `Printer ${CP.util.pad(i, 2)}`, model: 'Ender 3', status: 'idle', statusNote: '', material: 'PLA', currentJob: null, nozzle: { type: 'brass', installedAt: new Date().toISOString(), gramsExtruded: 0, abrasiveGramsExtruded: 0 }, octoprint: { url: '', apiKey: '' } });
       }
     }
     return list;
@@ -77,12 +75,19 @@ CP.registerModule((function () {
     const istNow = new Date(now.getTime() + (now.getTimezoneOffset() * 60 * 1000) + istOffset);
     const curYear = istNow.getFullYear(), curMonth = istNow.getMonth();
 
-    let revenueThisMonth = 0, outstandingBalance = 0;
+    let revenueThisMonth = 0, invoicedThisMonth = 0, outstandingBalance = 0;
 
     orders.forEach(o => {
       if (o.status !== 'cancelled' && o.status !== 'quote') {
         const tot = Number(o.pricing?.total) || 0, paid = Number(o.payment?.paidAmount) || 0;
         if (tot > paid) outstandingBalance += (tot - paid);
+
+        const orderDateStr = o.createdAt || o.date;
+        if (orderDateStr) {
+          const od = new Date(orderDateStr);
+          const istOD = new Date(od.getTime() + (od.getTimezoneOffset() * 60 * 1000) + istOffset);
+          if (istOD.getFullYear() === curYear && istOD.getMonth() === curMonth) invoicedThisMonth += tot;
+        }
       }
 
       const history = o.payment?.history || [];
@@ -101,6 +106,10 @@ CP.registerModule((function () {
       }
     });
 
+    const expensesThisMonth = (CP.expenses && typeof CP.expenses.getMonthTotal === 'function')
+      ? CP.expenses.getMonthTotal(curYear, curMonth) : 0;
+    const cashMovement = CP.util.round2(revenueThisMonth - expensesThisMonth);
+
     const scrapStats = (CP.scrap && typeof CP.scrap.totals === 'function') ? CP.scrap.totals('30d') : { scrapPct: 0 };
     const scrapPct = scrapStats.scrapPct || 0;
     const scrapStatus = (CP.scrap && typeof CP.scrap.scrapStatus === 'function') ? CP.scrap.scrapStatus(scrapPct) : 'good';
@@ -110,6 +119,9 @@ CP.registerModule((function () {
     return {
       activeJobs, availablePrinters, totalPrinters, ordersInPipeline,
       revenueThisMonth: CP.util.round2(revenueThisMonth),
+      invoicedThisMonth: CP.util.round2(invoicedThisMonth),
+      expensesThisMonth: CP.util.round2(expensesThisMonth),
+      cashMovement,
       outstandingBalance: CP.util.round2(outstandingBalance),
       scrapPct, scrapStatus,
       lowStockCount: lowStockAlerts.length, lowStockMaterials: lowStockAlerts,
@@ -127,13 +139,8 @@ CP.registerModule((function () {
       let detailHtml = '', startedAtAttr = '', durationMinAttr = '';
 
       if (isPrinting && job) {
-        startedAtAttr = `data-started-at="${CP.util.esc(job.startedAt || '')}"`;
-        durationMinAttr = `data-duration-min="${job.durationMin || 0}"`;
-        detailHtml = `
-          <div class="glance-part-name" title="${CP.util.esc(job.partName || 'Job')}">${CP.util.esc(job.partName || 'Part')}</div>
-          <div class="glance-job-meta">${CP.util.esc(job.orderId || '')} • ${CP.util.esc(job.material || 'PLA')}</div>
-          <div class="glance-timer font-mono">--:--:--</div>
-          <div class="glance-progress-track"><div class="glance-progress-bar" style="width: 0%"></div></div>`;
+        startedAtAttr = `data-started-at="${CP.util.esc(job.startedAt || '')}"`; durationMinAttr = `data-duration-min="${job.durationMin || 0}"`;
+        detailHtml = `<div class="glance-part-name" title="${CP.util.esc(job.partName || 'Job')}">${CP.util.esc(job.partName || 'Part')}</div><div class="glance-job-meta">${CP.util.esc(job.orderId || '')} • ${CP.util.esc(job.material || 'PLA')}</div><div class="glance-timer font-mono">--:--:--</div><div class="glance-progress-track"><div class="glance-progress-bar" style="width: 0%"></div></div>`;
       } else if (status === 'idle') {
         detailHtml = `<div class="glance-status-text" style="color: var(--status-idle);">Ready for job</div><div class="glance-job-meta">${CP.util.esc(p.material || 'PLA')} loaded</div>`;
       } else if (status === 'post') {
@@ -388,19 +395,15 @@ CP.registerModule((function () {
       <div class="field"><label>Purchase Date:</label><input type="date" class="input" id="q-add-date" value="${today}"></div>`;
 
     CP.ui.modal({
-      title: '🧵 Quick Add Spool',
-      bodyNode: wrapper,
+      title: '🧵 Quick Add Spool', bodyNode: wrapper,
       buttons: [
         { label: 'Cancel', kind: 'btn-secondary' },
         {
           label: 'Save Spool', kind: 'btn-primary',
           onClick: () => {
-            const material = wrapper.querySelector('#q-add-mat')?.value;
-            const color = wrapper.querySelector('#q-add-color')?.value.trim();
-            const brand = wrapper.querySelector('#q-add-brand')?.value.trim();
-            const supplier = wrapper.querySelector('#q-add-supplier')?.value.trim();
-            const initialG = Number(wrapper.querySelector('#q-add-grams')?.value);
-            const costINR = Number(wrapper.querySelector('#q-add-cost')?.value);
+            const material = wrapper.querySelector('#q-add-mat')?.value, color = wrapper.querySelector('#q-add-color')?.value.trim();
+            const brand = wrapper.querySelector('#q-add-brand')?.value.trim(), supplier = wrapper.querySelector('#q-add-supplier')?.value.trim();
+            const initialG = Number(wrapper.querySelector('#q-add-grams')?.value), costINR = Number(wrapper.querySelector('#q-add-cost')?.value);
             const purchasedAt = wrapper.querySelector('#q-add-date')?.value;
             if (isNaN(initialG) || initialG <= 0 || isNaN(costINR) || costINR < 0) { CP.ui.toast('Please check spool weight and cost values.', 'danger'); return false; }
             if (CP.inventory && typeof CP.inventory.addSpool === 'function') {
@@ -432,8 +435,7 @@ CP.registerModule((function () {
       <div class="field"><label>Notes (Optional):</label><input type="text" class="input" id="q-scr-notes" placeholder="e.g. Bed adhesion failure on initial layer"></div>`;
 
     CP.ui.modal({
-      title: '🗑️ Log Scrap',
-      bodyNode: wrapper,
+      title: '🗑️ Log Scrap', bodyNode: wrapper,
       buttons: [
         { label: 'Cancel', kind: 'btn-secondary' },
         {
@@ -445,10 +447,7 @@ CP.registerModule((function () {
             const reason = wrapper.querySelector('#q-scr-reason')?.value || 'Other', spoolId = wrapper.querySelector('#q-scr-spool')?.value || null;
             const notes = wrapper.querySelector('#q-scr-notes')?.value.trim() || '';
             if (isNaN(grams) || grams <= 0) { CP.ui.toast('Please enter valid scrap grams (> 0g).', 'danger'); return false; }
-
-            if (CP.scrap && typeof CP.scrap.add === 'function') {
-              CP.scrap.add({ printerId, orderId, material, grams, reason, notes, source: 'manual' });
-            }
+            if (CP.scrap && typeof CP.scrap.add === 'function') CP.scrap.add({ printerId, orderId, material, grams, reason, notes, source: 'manual' });
             if (spoolId && CP.inventory && typeof CP.inventory.consume === 'function') {
               CP.inventory.consume(spoolId, grams, { reason: 'scrap', orderId, printerId, note: `Manual scrap (${reason})` });
             }
@@ -482,6 +481,7 @@ CP.registerModule((function () {
           <div class="dashboard-quick-actions">
             <a href="#/order-desk" class="btn btn-primary" id="dash-btn-new-quote">➕ New Quote</a>
             <a href="#/orders" class="btn btn-secondary" id="dash-btn-record-payment">💳 Record Payment</a>
+            <a href="#/expenses" class="btn btn-secondary" id="dash-btn-record-expense">💸 Add Expense</a>
             <button type="button" class="btn btn-secondary" id="dash-btn-add-spool">🧵 Add Spool</button>
             <button type="button" class="btn btn-secondary" id="dash-btn-log-scrap">🗑️ Log Scrap</button>
           </div>
@@ -490,46 +490,40 @@ CP.registerModule((function () {
         <div class="dashboard-kpi-grid">
           <a href="#/farm" class="dash-kpi-card" id="kpi-card-active-jobs">
             <div class="dash-kpi-header"><span class="dash-kpi-label">Active Jobs</span><span class="dash-kpi-icon">🖨️</span></div>
-            <div class="dash-kpi-val">${kpis.activeJobs}</div>
-            <div class="dash-kpi-sub">in production</div>
+            <div class="dash-kpi-val">${kpis.activeJobs}</div><div class="dash-kpi-sub">in production</div>
           </a>
-
           <a href="#/farm" class="dash-kpi-card" id="kpi-card-printers-available">
             <div class="dash-kpi-header"><span class="dash-kpi-label">Printers Available</span><span class="dash-kpi-icon">⚡</span></div>
-            <div class="dash-kpi-val">${kpis.availablePrinters}</div>
-            <div class="dash-kpi-sub">idle of ${kpis.totalPrinters} machines</div>
+            <div class="dash-kpi-val">${kpis.availablePrinters}</div><div class="dash-kpi-sub">idle of ${kpis.totalPrinters} machines</div>
           </a>
-
           <a href="#/orders" class="dash-kpi-card" id="kpi-card-pipeline">
             <div class="dash-kpi-header"><span class="dash-kpi-label">Orders in Pipeline</span><span class="dash-kpi-icon">📦</span></div>
-            <div class="dash-kpi-val">${kpis.ordersInPipeline}</div>
-            <div class="dash-kpi-sub">confirmed &rarr; ready</div>
+            <div class="dash-kpi-val">${kpis.ordersInPipeline}</div><div class="dash-kpi-sub">confirmed &rarr; ready</div>
           </a>
-
           <a href="#/orders" class="dash-kpi-card" id="kpi-card-revenue">
-            <div class="dash-kpi-header"><span class="dash-kpi-label">Revenue This Month</span><span class="dash-kpi-icon">💰</span></div>
+            <div class="dash-kpi-header"><span class="dash-kpi-label">Cash Received (Month)</span><span class="dash-kpi-icon">💰</span></div>
             <div class="dash-kpi-val font-mono" style="font-size: 19px; color: var(--brand);">${CP.util.fmtINR(kpis.revenueThisMonth)}</div>
-            <div class="dash-kpi-sub">collected in IST</div>
+            <div class="dash-kpi-sub">vs ₹${CP.util.fmtNum(Math.round(kpis.invoicedThisMonth))} invoiced</div>
           </a>
-
+          <a href="#/expenses" class="dash-kpi-card" id="kpi-card-cash-movement">
+            <div class="dash-kpi-header"><span class="dash-kpi-label">Cash Movement (Month)</span><span class="dash-kpi-icon">💸</span></div>
+            <div class="dash-kpi-val font-mono" style="font-size: 19px; ${kpis.cashMovement >= 0 ? 'color: var(--brand);' : 'color: var(--danger);'}">${CP.util.fmtINR(kpis.cashMovement)}</div>
+            <div class="dash-kpi-sub">Receipts - Expenses (not net profit)</div>
+          </a>
           <a href="#/orders" class="dash-kpi-card" id="kpi-card-outstanding">
             <div class="dash-kpi-header"><span class="dash-kpi-label">Outstanding Balance</span><span class="dash-kpi-icon">⏳</span></div>
             <div class="dash-kpi-val font-mono" style="font-size: 19px; ${kpis.outstandingBalance > 0 ? 'color: var(--danger);' : ''}">${CP.util.fmtINR(kpis.outstandingBalance)}</div>
             <div class="dash-kpi-sub">unpaid &amp; advances</div>
           </a>
-
           <a href="#/qc" class="dash-kpi-card" id="kpi-card-scrap">
             <div class="dash-kpi-header"><span class="dash-kpi-label">Scrap % (30 Days)</span><span class="dash-kpi-icon">🗑️</span></div>
-            <div class="dash-kpi-val ${scrapColorClass}">${kpis.scrapPct}%</div>
-            <div class="dash-kpi-sub">target: 5.0%</div>
+            <div class="dash-kpi-val ${scrapColorClass}">${kpis.scrapPct}%</div><div class="dash-kpi-sub">target: 5.0%</div>
           </a>
-
           <a href="#/inventory" class="dash-kpi-card" id="kpi-card-low-stock">
             <div class="dash-kpi-header"><span class="dash-kpi-label">Low-Stock Materials</span><span class="dash-kpi-icon">🧵</span></div>
             <div class="dash-kpi-val" style="${kpis.lowStockCount > 0 ? 'color: var(--warning);' : ''}">${kpis.lowStockCount}</div>
             <div class="dash-kpi-sub">${kpis.lowStockCount > 0 ? `${kpis.lowStockMaterials.join(', ')} low` : 'all stock healthy'}</div>
           </a>
-
           <a href="#/maintenance" class="dash-kpi-card" id="kpi-card-overdue-maint">
             <div class="dash-kpi-header"><span class="dash-kpi-label">Overdue Maintenance</span><span class="dash-kpi-icon">🔧</span></div>
             <div class="dash-kpi-val" style="${kpis.overdueMaintCount > 0 ? 'color: var(--danger);' : ''}">${kpis.overdueMaintCount}</div>
@@ -562,10 +556,12 @@ CP.registerModule((function () {
       unsubscribers.push(CP.bus.on('stock:changed', renderView));
       unsubscribers.push(CP.bus.on('scrap:changed', renderView));
       unsubscribers.push(CP.bus.on('maint:changed', renderView));
+      unsubscribers.push(CP.bus.on('expenses:changed', renderView));
       unsubscribers.push(CP.bus.on('store:cp_orders', renderView));
       unsubscribers.push(CP.bus.on('store:cp_printers', renderView));
       unsubscribers.push(CP.bus.on('store:cp_spools', renderView));
       unsubscribers.push(CP.bus.on('store:cp_scrap', renderView));
+      unsubscribers.push(CP.bus.on('store:cp_expenses', renderView));
     }
   }
 
