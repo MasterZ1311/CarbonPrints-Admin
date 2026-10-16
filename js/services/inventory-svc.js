@@ -440,7 +440,8 @@ CP.inventory = (function () {
     CP.bus.on('job:completed', (payload) => {
       if (!payload || !payload.spoolId) return;
       const processed = CP.store.get('cp_processed_job_events', []);
-      const eventKey = `comp_${payload.orderId}_${payload.partId}_${payload.spoolId}_${payload.gramsActual}`;
+      const runId = payload.jobRunId || payload.startedAt || `${payload.spoolId}_${payload.gramsActual}`;
+      const eventKey = `comp_${payload.orderId}_${payload.partId}_${runId}`;
       if (processed.includes(eventKey)) return;
 
       processed.push(eventKey);
@@ -458,7 +459,8 @@ CP.inventory = (function () {
     CP.bus.on('job:failed', (payload) => {
       if (!payload || !payload.spoolId) return;
       const processed = CP.store.get('cp_processed_job_events', []);
-      const eventKey = `fail_${payload.orderId}_${payload.partId}_${payload.spoolId}_${payload.failedG}_${payload.reason || ''}`;
+      const runId = payload.jobRunId || payload.startedAt || `${payload.spoolId}_${payload.failedG}_${payload.reason || ''}`;
+      const eventKey = `fail_${payload.orderId}_${payload.partId}_${runId}`;
       if (processed.includes(eventKey)) return;
 
       processed.push(eventKey);

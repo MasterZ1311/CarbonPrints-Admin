@@ -229,7 +229,8 @@ CP.scrap = (function () {
 
       // Guard against double processing using stored processed keys
       const processed = CP.store.get('cp_processed_job_events', []);
-      const eventKey = `scrap_fail_${payload.orderId}_${payload.partId}_${payload.spoolId}_${payload.failedG}_${payload.reason || ''}`;
+      const runId = payload.jobRunId || payload.startedAt || `${payload.spoolId}_${payload.failedG}_${payload.reason || ''}`;
+      const eventKey = `scrap_fail_${payload.orderId}_${payload.partId}_${runId}`;
       if (processed.includes(eventKey)) return;
 
       processed.push(eventKey);

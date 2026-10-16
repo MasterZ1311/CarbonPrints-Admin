@@ -69,125 +69,114 @@ CP.bambu = (function () {
   function create3mfStub(part, order) {
     const partName = (part && part.name) ? part.name.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Part';
     const orderId = (order && order.id) ? order.id.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Order';
-    const material = (part && part.material) ? part.material : 'PLA';
-    const layer = (part && part.layer) ? part.layer : '0.20';
+    const material = (part && part.material) ? part.material : 'PLA', layer = (part && part.layer) ? part.layer : '0.20';
     const customer = (order && order.customer && order.customer.name) ? order.customer.name : 'Workshop';
-
-    // Basic 3MF Model XML representation
-    const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
-<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
-  <metadata name="Title">${CP.util ? CP.util.esc(partName) : partName}</metadata>
-  <metadata name="Designer">CarbonPrints Company OS (${CP.util ? CP.util.esc(customer) : customer})</metadata>
-  <metadata name="Description">Order: ${orderId} | Material: ${material} | Layer: ${layer}mm</metadata>
-  <metadata name="Application">BambuStudio</metadata>
-  <resources>
-    <object id="1" type="model">
-      <mesh>
-        <vertices>
-          <vertex x="0" y="0" z="0"/>
-          <vertex x="20" y="0" z="0"/>
-          <vertex x="20" y="20" z="0"/>
-          <vertex x="0" y="20" z="0"/>
-          <vertex x="0" y="0" z="20"/>
-          <vertex x="20" y="0" z="20"/>
-          <vertex x="20" y="20" z="20"/>
-          <vertex x="0" y="20" z="20"/>
-        </vertices>
-        <triangles>
-          <triangle v1="0" v2="2" v3="1"/>
-          <triangle v1="0" v2="3" v3="2"/>
-          <triangle v1="4" v2="5" v3="6"/>
-          <triangle v1="4" v2="6" v3="7"/>
-          <triangle v1="0" v2="1" v3="5"/>
-          <triangle v1="0" v2="5" v3="4"/>
-          <triangle v1="1" v2="2" v3="6"/>
-          <triangle v1="1" v2="6" v3="5"/>
-          <triangle v1="2" v2="3" v3="7"/>
-          <triangle v1="2" v2="7" v3="6"/>
-          <triangle v1="3" v2="0" v3="4"/>
-          <triangle v1="3" v2="4" v3="7"/>
-        </triangles>
-      </mesh>
-    </object>
-  </resources>
-  <build>
-    <item objectid="1"/>
-  </build>
-</model>`;
-
+    const esc = (CP.util && CP.util.esc) ? CP.util.esc : (s => s);
+    const modelXml = `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n  <metadata name="Title">${esc(partName)}</metadata>\n  <metadata name="Designer">CarbonPrints Company OS (${esc(customer)})</metadata>\n  <metadata name="Description">Order: ${orderId} | Material: ${material} | Layer: ${layer}mm</metadata>\n  <metadata name="Application">BambuStudio</metadata>\n  <resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="20"/><vertex x="20" y="0" z="20"/><vertex x="20" y="20" z="20"/><vertex x="0" y="20" z="20"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources>\n  <build><item objectid="1"/></build>\n</model>`;
     const fileName = `${orderId}_${partName}_${material}_${layer}mm.3mf`;
     return { fileName, modelXml, partName, orderId, material, layer };
   }
 
   /**
-   * One-click handoff into Bambu Studio
+   * Transparent manual slicer handoff modal
+   */
+  function openSlicerHandoffModal(part, order) {
+    if (!part || typeof document === 'undefined') return;
+    const settings = (CP.store && CP.store.get('cp_settings')) || (CP.defaults ? CP.defaults.settings : {});
+    const estH = CP.pricing ? CP.pricing.partPrintHours(part, settings) : 1;
+    const totalG = (Number(part.weightG) || 0) * (Number(part.qty) || 1);
+    const orderId = (order && order.id) ? order.id : 'Draft';
+    const customer = (order && order.customer && order.customer.name) ? order.customer.name : 'Workshop Customer';
+
+    const specText = `CARBONPRINTS SLICER JOB TICKET\n==============================\nOrder ID:       ${orderId}\nCustomer:       ${customer}\nPart Name:      ${part.name || 'Unnamed Part'}\nMaterial:       ${part.material || 'PLA'}\nLayer Height:   ${part.layer || '0.20'} mm\nInfill:         ${part.infillPct ?? 20}%\nQuantity:       ${part.qty || 1}\nTotal Weight:   ~${totalG} g (${part.weightG || 0}g each)\nEst. Duration:  ~${estH} hours\nTarget Machine: Bambu Lab / FDM Profile\nGenerated:      ${new Date().toLocaleString()}\n------------------------------\nINSTRUCTIONS:\n1. Open model file (.stl / .step) in Bambu Studio or slicer.\n2. Set material to ${part.material || 'PLA'} & layer to ${part.layer || '0.20'}mm.\n3. Slice with ${part.infillPct ?? 20}% infill and send to printer via LAN/SD card.`;
+
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `
+      <div class="banner banner-info" style="margin-bottom: 12px; font-size: 12px;">
+        ℹ️ <strong>Manual Slicer Handoff</strong>: Bambu Studio executable was not launched via local bridge. Apply the job parameters below in your slicer.
+      </div>
+      <div style="background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; margin-bottom: 12px;">${CP.util ? CP.util.esc(specText) : specText}</div>
+    `;
+
+    if (CP.ui && CP.ui.modal) {
+      CP.ui.modal({
+        title: `Slicer Handoff: ${part.name || 'Part'}`,
+        bodyNode: wrapper,
+        buttons: [
+          { label: 'Close', kind: 'btn-secondary' },
+          {
+            label: '📋 Copy Parameters',
+            kind: 'btn-secondary',
+            onClick: () => {
+              if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(specText);
+                if (CP.ui && CP.ui.toast) CP.ui.toast('Slicer specifications copied to clipboard!', 'success');
+              } else if (CP.ui && CP.ui.toast) {
+                CP.ui.toast('Clipboard unavailable. Select text manually.', 'warning');
+              }
+              return false;
+            }
+          },
+          {
+            label: '📄 Download Job Ticket (.txt)',
+            kind: 'btn-primary',
+            onClick: () => {
+              const blob = new Blob([specText], { type: 'text/plain;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `CP_${orderId}_${(part.name || 'part').replace(/[^a-zA-Z0-9_-]/g, '_')}_Specs.txt`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(() => URL.revokeObjectURL(url), 2000);
+              if (CP.ui && CP.ui.toast) CP.ui.toast('Job ticket downloaded.', 'success');
+              return true;
+            }
+          }
+        ]
+      });
+    }
+  }
+
+  /**
+   * One-click handoff into Bambu Studio or transparent manual workflow
    */
   async function openInStudio(part, order, bridgeUrl) {
-    if (!part) return;
-    const stub = create3mfStub(part, order);
+    if (!part) return false;
     const bUrl = cleanUrl(bridgeUrl);
 
-    // 1. Try triggering local bridge if running to launch Bambu Studio desktop app
+    // 1. Try launching Bambu Studio desktop app via local bridge
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 1200);
+      const timer = setTimeout(() => controller.abort(), 1500);
       const res = await fetch(`${bUrl}/api/open-studio`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CP-App': 'CarbonPrints' },
         body: JSON.stringify({
-          partName: stub.partName,
-          orderId: stub.orderId,
-          material: stub.material,
-          layer: stub.layer,
-          fileName: stub.fileName
+          partName: part.name || 'Part',
+          orderId: order?.id || 'Order',
+          material: part.material || 'PLA',
+          layer: part.layer || '0.20'
         }),
         signal: controller.signal
       }).catch(() => null);
       clearTimeout(timer);
-      if (res && res.ok) {
-        if (CP.ui && CP.ui.toast) {
-          CP.ui.toast(`Launched Bambu Studio for "${stub.partName}" via local bridge!`, 'success');
-        }
-        return true;
-      }
-    } catch (e) {
-      // Bridge not reachable, fallback to direct browser protocol / download
-    }
 
-    // 2. Try URI protocol scheme
-    const protoUri = `bambustudio://open?name=${encodeURIComponent(stub.partName)}&order=${encodeURIComponent(stub.orderId)}`;
-    try {
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = protoUri;
-      document.body.appendChild(iframe);
-      setTimeout(() => {
-        try { document.body.removeChild(iframe); } catch (e) {}
-      }, 2000);
+      if (res && res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.launched && data.status === 'success') {
+          if (CP.ui && CP.ui.toast) {
+            CP.ui.toast(`Launched Bambu Studio (${data.method})!`, 'success');
+          }
+          return true;
+        }
+      }
     } catch (e) {}
 
-    // 3. Trigger 3MF Project Stub Download so double-clicking directly opens in Bambu Studio
-    try {
-      const blob = new Blob([stub.modelXml], { type: 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = stub.fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-
-      if (CP.ui && CP.ui.toast) {
-        CP.ui.toast(`Exported "${stub.fileName}". Opening in Bambu Studio!`, 'success');
-      }
-      return true;
-    } catch (err) {
-      if (CP.ui && CP.ui.toast) {
-        CP.ui.toast(`Could not trigger slicer: ${err.message}`, 'danger');
-      }
-      return false;
-    }
+    // 2. Fallback to transparent manual slicer handoff modal
+    openSlicerHandoffModal(part, order);
+    return false;
   }
 
   /**
@@ -212,7 +201,10 @@ CP.bambu = (function () {
 
     try {
       const url = `${bridgeUrl}/api/printer/${encodeURIComponent(identifier)}`;
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, {
+        headers: { 'X-CP-App': 'CarbonPrints' },
+        signal: controller.signal
+      });
       clearTimeout(timer);
 
       if (!res.ok) {
@@ -223,9 +215,24 @@ CP.bambu = (function () {
         };
       }
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (!data) {
+        return { online: false, configured: true, error: 'Invalid response from Bambu bridge.' };
+      }
+
       const online = !!data.online;
       const state = data.state || (online ? 'IDLE' : 'OFFLINE');
+
+      if (state === 'UNAUTHORIZED') {
+        return { online: false, configured: true, state, error: 'Printer connection rejected. Check LAN Access Code.' };
+      }
+      if (state === 'NOT_CONNECTED') {
+        return { online: false, configured: true, state, error: data.error || `Printer #${identifier} not connected to bridge.` };
+      }
+      if (data.error && !online) {
+        return { online: false, configured: true, state, error: data.error };
+      }
+
       const progressPct = data.progressPct != null ? Math.round(Number(data.progressPct) * 10) / 10 : null;
       const timeLeftSec = data.timeLeftSec != null ? Number(data.timeLeftSec) : null;
       const isFinished = !!data.isFinished || state === 'FINISH' || (progressPct != null && progressPct >= 100);
@@ -341,8 +348,49 @@ CP.bambu = (function () {
     return failureCounts[printerId] || 0;
   }
 
-  function testConnection(cfg) {
-    return fetchStatus({ bambu: cfg, integration: 'bambu' });
+  async function testConnection(cfg) {
+    const bridgeUrl = cleanUrl(cfg?.bridgeUrl);
+    const ip = (cfg?.ip || '').trim();
+    const accessCode = (cfg?.accessCode || '').trim();
+    const serial = (cfg?.serial || '').trim();
+    const id = cfg?.id || serial || '1';
+
+    if (!ip || !accessCode || !serial) {
+      return { online: false, configured: false, error: 'Printer IP, LAN Access Code, and Serial Number are all required.' };
+    }
+
+    const mixedErr = checkMixedContent(bridgeUrl);
+    if (mixedErr) return { online: false, configured: true, error: mixedErr };
+
+    // 1. Send /api/connect to bridge
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      const res = await fetch(`${bridgeUrl}/api/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CP-App': 'CarbonPrints' },
+        body: JSON.stringify({ id, ip, accessCode, serial }),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        return { online: false, configured: true, error: errJson.error || `Bridge returned HTTP ${res.status}` };
+      }
+      const data = await res.json().catch(() => ({}));
+      if (data.error) {
+        return { online: false, configured: true, error: data.error };
+      }
+    } catch (err) {
+      const isTimeout = err.name === 'AbortError';
+      const msg = isTimeout ? 'Bridge connection timed out (5s).' : 'Local Bambu Bridge unreachable on port 5005. Start tools/bambu_bridge.py.';
+      return { online: false, configured: true, error: msg };
+    }
+
+    // 2. Poll printer status
+    await new Promise(r => setTimeout(r, 400));
+    return fetchStatus({ bambu: { ...cfg, bridgeUrl, ip, serial }, id, integration: 'bambu' });
   }
 
   function renderCardChip(printer) {
@@ -454,7 +502,7 @@ CP.bambu = (function () {
           </div>
           <div class="field" style="margin-bottom: 0;">
             <label for="bambu-code-${p.id}" style="font-size: 11px;">LAN Access Code</label>
-            <input type="text" id="bambu-code-${p.id}" class="input input-sm bambu-code-input" placeholder="From printer screen (e.g. 12345678)" value="${CP.util ? CP.util.esc(p.bambu?.accessCode || '') : (p.bambu?.accessCode || '')}">
+            <input type="password" id="bambu-code-${p.id}" class="input input-sm bambu-code-input" placeholder="From printer screen" value="${CP.util ? CP.util.esc(p.bambu?.accessCode || '') : (p.bambu?.accessCode || '')}">
           </div>
           <div class="field" style="margin-bottom: 0;">
             <label for="bambu-serial-${p.id}" style="font-size: 11px;">Printer Serial Number</label>
@@ -480,6 +528,7 @@ CP.bambu = (function () {
     formatTimeLeft,
     create3mfStub,
     openInStudio,
+    openSlicerHandoffModal,
     fetchStatus,
     pollPrinters,
     startPolling,

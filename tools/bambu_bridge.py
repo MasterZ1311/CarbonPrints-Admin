@@ -23,6 +23,8 @@ import ssl
 import subprocess
 import threading
 import argparse
+import ipaddress
+import re
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, unquote
 
@@ -38,6 +40,7 @@ PRINTER_DATA = {}
 PRINTER_CLIENTS = {}
 STATE_LOCK = threading.Lock()
 MOCK_MODE = False
+AUTH_TOKEN = ""
 
 
 def find_bambu_studio_exe():
@@ -254,13 +257,56 @@ def update_mock_telemetry():
 class BridgeHttpHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler providing CORS REST endpoints for CarbonPrints."""
 
+    def _get_allowed_origin(self):
+        origin = self.headers.get("Origin", "")
+        if not origin:
+            return "http://127.0.0.1"
+        if origin == "null":
+            return "null"
+        try:
+            parsed = urlparse(origin)
+            hostname = parsed.hostname or ""
+            if hostname in ("127.0.0.1", "localhost", "::1"):
+                return origin
+        except Exception:
+            pass
+        return None
+
+    def _check_auth(self):
+        global AUTH_TOKEN
+        if not AUTH_TOKEN:
+            return True
+        client_token = self.headers.get("X-Bridge-Token") or ""
+        auth_hdr = self.headers.get("Authorization", "")
+        if auth_hdr.startswith("Bearer "):
+            client_token = auth_hdr[7:].strip()
+        return client_token == AUTH_TOKEN
+
     def _send_cors_headers(self, status=200, content_type="application/json"):
+        origin = self._get_allowed_origin()
+        if not origin:
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Forbidden: Untrusted Origin"}).encode('utf-8'))
+            return False
+
+        if not self._check_auth():
+            self.send_response(401)
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Unauthorized: Invalid or missing bridge token"}).encode('utf-8'))
+            return False
+
         self.send_response(status)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Requested-With")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Requested-With, X-CP-App, Authorization, X-Bridge-Token")
+        self.send_header("Vary", "Origin")
         self.send_header("Content-Type", content_type)
         self.end_headers()
+        return True
 
     def do_OPTIONS(self):
         self._send_cors_headers(204)
@@ -273,31 +319,30 @@ class BridgeHttpHandler(BaseHTTPRequestHandler):
             resp = {
                 "status": "ok",
                 "service": "CarbonPrints Bambu Lab Bridge",
-                "version": "1.0.0",
+                "version": "1.1.0",
                 "paho_mqtt": PAHO_AVAILABLE,
                 "mock_mode": MOCK_MODE,
+                "token_auth_enabled": bool(AUTH_TOKEN),
                 "printers_tracked": list(PRINTER_DATA.keys())
             }
-            self._send_cors_headers(200)
-            self.wfile.write(json.dumps(resp).encode('utf-8'))
+            if self._send_cors_headers(200):
+                self.wfile.write(json.dumps(resp).encode('utf-8'))
             return
 
         if path == "/api/printers":
             with STATE_LOCK:
                 data = dict(PRINTER_DATA)
-            self._send_cors_headers(200)
-            self.wfile.write(json.dumps(data).encode('utf-8'))
+            if self._send_cors_headers(200):
+                self.wfile.write(json.dumps(data).encode('utf-8'))
             return
 
         if path.startswith("/api/printer/"):
             printer_id = unquote(path[len("/api/printer/"):])
             with STATE_LOCK:
-                # Direct match or serial match or fallback to mock
                 data = PRINTER_DATA.get(printer_id)
                 if not data and MOCK_MODE:
                     data = PRINTER_DATA.get("mock")
                 if not data:
-                    # Search by serial or first available
                     for k, v in PRINTER_DATA.items():
                         if k == printer_id or v.get("serial") == printer_id:
                             data = v
@@ -310,12 +355,12 @@ class BridgeHttpHandler(BaseHTTPRequestHandler):
                     "error": f"Printer #{printer_id} not connected to bridge."
                 }
 
-            self._send_cors_headers(200)
-            self.wfile.write(json.dumps(data).encode('utf-8'))
+            if self._send_cors_headers(200):
+                self.wfile.write(json.dumps(data).encode('utf-8'))
             return
 
-        self._send_cors_headers(404)
-        self.wfile.write(json.dumps({"error": "Endpoint not found"}).encode('utf-8'))
+        if self._send_cors_headers(404):
+            self.wfile.write(json.dumps({"error": "Endpoint not found"}).encode('utf-8'))
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -330,13 +375,30 @@ class BridgeHttpHandler(BaseHTTPRequestHandler):
 
         if path == "/api/connect":
             p_id = str(req_data.get("id") or req_data.get("serial") or "1")
-            ip = req_data.get("ip")
-            code = req_data.get("accessCode")
-            serial = req_data.get("serial")
+            ip = str(req_data.get("ip") or "").strip()
+            code = str(req_data.get("accessCode") or "").strip()
+            serial = str(req_data.get("serial") or "").strip()
 
             if not ip or not code or not serial:
-                self._send_cors_headers(400)
-                self.wfile.write(json.dumps({"error": "ip, accessCode, and serial are required"}).encode('utf-8'))
+                if self._send_cors_headers(400):
+                    self.wfile.write(json.dumps({"error": "ip, accessCode, and serial are required"}).encode('utf-8'))
+                return
+
+            try:
+                ipaddress.IPv4Address(ip)
+            except ValueError:
+                if self._send_cors_headers(400):
+                    self.wfile.write(json.dumps({"error": f"Invalid IPv4 address: {ip}"}).encode('utf-8'))
+                return
+
+            if not re.match(r'^[A-Za-z0-9_\-\.]{4,60}$', serial):
+                if self._send_cors_headers(400):
+                    self.wfile.write(json.dumps({"error": "Invalid serial number format"}).encode('utf-8'))
+                return
+
+            if len(code) < 4:
+                if self._send_cors_headers(400):
+                    self.wfile.write(json.dumps({"error": "Access code must be at least 4 characters"}).encode('utf-8'))
                 return
 
             if p_id in PRINTER_CLIENTS:
@@ -345,18 +407,16 @@ class BridgeHttpHandler(BaseHTTPRequestHandler):
             client = BambuMqttClient(p_id, ip, code, serial)
             PRINTER_CLIENTS[p_id] = client
 
-            self._send_cors_headers(200)
-            self.wfile.write(json.dumps({"status": "connecting", "printer_id": p_id}).encode('utf-8'))
+            if self._send_cors_headers(200):
+                self.wfile.write(json.dumps({"status": "connecting", "printer_id": p_id}).encode('utf-8'))
             return
 
         if path == "/api/open-studio":
-            part_name = req_data.get("partName", "Model")
-            file_name = req_data.get("fileName", "")
-
-            # Attempt to launch Bambu Studio desktop executable
+            part_name = re.sub(r'[^a-zA-Z0-9_\-\.\s]', '', str(req_data.get("partName", "Model")))[:80]
             exe_path = find_bambu_studio_exe()
             launched = False
             launch_method = None
+            err_msg = None
 
             if exe_path and os.path.exists(exe_path):
                 try:
@@ -364,26 +424,28 @@ class BridgeHttpHandler(BaseHTTPRequestHandler):
                     launched = True
                     launch_method = exe_path
                 except Exception as e:
-                    print(f"[Bambu] Could not start exe: {e}")
+                    err_msg = f"Failed to start Bambu Studio executable: {str(e)}"
+            else:
+                err_msg = "Bambu Studio executable not found in standard installation paths. Use manual slicer handoff."
 
-            if not launched and sys.platform == "win32":
-                try:
-                    os.startfile(f"bambustudio://open?name={part_name}")
-                    launched = True
-                    launch_method = "bambustudio:// protocol"
-                except Exception as e:
-                    print(f"[Bambu] Protocol launch error: {e}")
-
-            self._send_cors_headers(200)
-            self.wfile.write(json.dumps({
-                "status": "success" if launched else "fallback_to_browser",
-                "launched": launched,
-                "method": launch_method
-            }).encode('utf-8'))
+            if launched:
+                if self._send_cors_headers(200):
+                    self.wfile.write(json.dumps({
+                        "status": "success",
+                        "launched": True,
+                        "method": launch_method
+                    }).encode('utf-8'))
+            else:
+                if self._send_cors_headers(200):
+                    self.wfile.write(json.dumps({
+                        "status": "error",
+                        "launched": False,
+                        "error": err_msg
+                    }).encode('utf-8'))
             return
 
-        self._send_cors_headers(404)
-        self.wfile.write(json.dumps({"error": "Endpoint not found"}).encode('utf-8'))
+        if self._send_cors_headers(404):
+            self.wfile.write(json.dumps({"error": "Endpoint not found"}).encode('utf-8'))
 
     def log_message(self, format, *args):
         # Silence verbose HTTP logging for polling requests
@@ -391,22 +453,30 @@ class BridgeHttpHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    global MOCK_MODE
+    global MOCK_MODE, AUTH_TOKEN
     parser = argparse.ArgumentParser(description="CarbonPrints Bambu Lab Bridge")
     parser.add_argument("--port", type=int, default=5005, help="HTTP port (default: 5005)")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="HTTP host (default: 127.0.0.1)")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="HTTP host (loopback only, default: 127.0.0.1)")
+    parser.add_argument("--token", type=str, default=os.environ.get("BAMBU_BRIDGE_TOKEN", ""), help="Optional authorization token")
     parser.add_argument("--mock", action="store_true", help="Enable simulated Bambu printer telemetry")
     args = parser.parse_args()
 
+    loopback_hosts = ("127.0.0.1", "localhost", "::1")
+    if args.host not in loopback_hosts:
+        print(f"[Security Warning] Non-loopback host '{args.host}' is not permitted. Reverting to 127.0.0.1.")
+        args.host = "127.0.0.1"
+
     MOCK_MODE = args.mock
+    AUTH_TOKEN = args.token
 
     print("=" * 65)
     print(" 🎋 CarbonPrints Company OS - Bambu Lab Bridge")
     print("=" * 65)
     print(f" Bridge HTTP URL:  http://{args.host}:{args.port}")
     print(f" MQTT Protocol:    TLS Port 8883 (LAN Only Mode)")
-    print(f" Bambu Studio Exe: {find_bambu_studio_exe() or 'Not found in standard paths (URL protocol will be used)'}")
+    print(f" Bambu Studio Exe: {find_bambu_studio_exe() or 'Not found in standard paths'}")
     print(f" Mock Telemetry:   {'ENABLED (Simulating active prints)' if MOCK_MODE else 'DISABLED'}")
+    print(f" Token Auth:       {'ENABLED' if AUTH_TOKEN else 'DISABLED (Loopback only)'}")
     print("=" * 65)
 
     if MOCK_MODE:

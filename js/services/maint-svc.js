@@ -239,7 +239,8 @@ CP.maint = (function () {
       if (!payload || !payload.printerId) return;
 
       const processed = CP.store.get('cp_processed_job_events', []);
-      const eventKey = `maint_comp_${payload.orderId}_${payload.partId}_${payload.printerId}_${payload.gramsActual}`;
+      const runId = payload.jobRunId || payload.startedAt || `${payload.printerId}_${payload.gramsActual}`;
+      const eventKey = `maint_comp_${payload.orderId}_${payload.partId}_${runId}`;
       if (processed.includes(eventKey)) return;
 
       processed.push(eventKey);
@@ -268,7 +269,8 @@ CP.maint = (function () {
       if (!payload || !payload.printerId) return;
 
       const processed = CP.store.get('cp_processed_job_events', []);
-      const eventKey = `maint_fail_${payload.orderId}_${payload.partId}_${payload.printerId}_${payload.failedG}_${payload.reason || ''}`;
+      const runId = payload.jobRunId || payload.startedAt || `${payload.printerId}_${payload.failedG}_${payload.reason || ''}`;
+      const eventKey = `maint_fail_${payload.orderId}_${payload.partId}_${runId}`;
       if (processed.includes(eventKey)) return;
 
       processed.push(eventKey);

@@ -85,6 +85,14 @@ CP.farm = (function () {
       CP.ui.toast(`Printer ${printer.name} is ${printer.status}. Only idle printers accept jobs.`, 'danger');
       return;
     }
+    if (part.status !== 'pending') {
+      CP.ui.toast(`Part "${part.name}" is already ${part.status}. Only pending parts can be assigned.`, 'warning');
+      return;
+    }
+    if (order.status !== 'confirmed' && order.status !== 'printing') {
+      CP.ui.toast(`Order ${order.id} is ${order.status}. Only confirmed orders accept assignments.`, 'warning');
+      return;
+    }
 
     const settings = CP.store.get('cp_settings', CP.defaults ? CP.defaults.settings : {});
     const spools = CP.store.get('cp_spools', []);
@@ -108,7 +116,7 @@ CP.farm = (function () {
       bodyNode: wrapper,
       buttons: [
         { label: 'Cancel', kind: 'btn-secondary' },
-        { label: '🎋 Slice in Bambu', kind: 'btn-secondary', onClick: () => { if (CP.bambu) CP.bambu.openInStudio(part, order, printer.bambu?.bridgeUrl); return false; } },
+        { label: '🎋 Slicer Handoff', kind: 'btn-secondary', onClick: () => { if (CP.bambu) CP.bambu.openInStudio(part, order, printer.bambu?.bridgeUrl); return false; } },
         {
           label: 'Confirm & Start Print',
           kind: 'btn-primary',
@@ -137,17 +145,25 @@ CP.farm = (function () {
     const printer = printers.find(p => p.id === Number(printerId));
     if (!printer || printer.status !== 'idle') { CP.ui.toast('Printer is not idle!', 'danger'); return; }
 
+    const orders = CP.store.get('cp_orders', []);
+    const order = orders.find(o => o.id === orderId);
+    const part = order ? (order.parts || []).find(p => p.id === partId) : null;
+    if (!part || part.status !== 'pending') { CP.ui.toast(`Part is not in pending state (${part ? part.status : 'missing'})!`, 'danger'); return; }
+
     const nowISO = new Date().toISOString();
+    const jobRunId = `${orderId}_${partId}_${Date.now()}`;
     printer.status = 'printing';
     printer.statusNote = '';
+    printer.material = part.material;
+    printer.currentJob = { orderId: order.id, partId, partName: part.name, material: part.material, spoolId, gramsPlanned, startedAt: nowISO, durationMin, jobRunId };
 
-    updatePartAndOrder(orderId, partId, { status: 'printing', assignedPrinterId: printer.id, spoolId }, (order) => {
-      if (order.status === 'confirmed') order.status = 'printing';
-      const part = order.parts.find(p => p.id === partId);
-      printer.material = part.material;
-      printer.currentJob = { orderId: order.id, partId, partName: part.name, material: part.material, spoolId, gramsPlanned, startedAt: nowISO, durationMin };
-    });
+    part.status = 'printing';
+    part.assignedPrinterId = printer.id;
+    part.spoolId = spoolId;
+    if (order.status === 'confirmed') order.status = 'printing';
+    order.updatedAt = nowISO;
 
+    CP.store.set('cp_orders', orders);
     CP.store.set('cp_printers', printers);
     CP.ui.toast(`Started print on ${printer.name}`, 'success');
     renderView();
@@ -195,7 +211,10 @@ CP.farm = (function () {
 
   function openCompleteModal(printer) {
     const job = printer.currentJob;
-    if (!job) return;
+    if (!job || printer.status !== 'printing') {
+      CP.ui.toast(`Printer ${printer.name} is not currently printing.`, 'warning');
+      return;
+    }
     const wrapper = document.createElement('div');
     wrapper.innerHTML = `
       <div class="banner banner-info" style="margin-bottom:12px;"><div><strong>${CP.util.esc(job.partName)}</strong> (${CP.util.esc(job.orderId)})</div><div style="font-size:12px;">Material: ${CP.util.esc(job.material)} &bull; Planned: ${job.gramsPlanned}g</div></div>
@@ -208,7 +227,9 @@ CP.farm = (function () {
           label: 'Complete & Move to Post', kind: 'btn-primary',
           onClick: () => {
             const gramsActual = Number(wrapper.querySelector('#comp-actual-g')?.value) || job.gramsPlanned;
-            const payload = { printerId: printer.id, orderId: job.orderId, partId: job.partId, spoolId: job.spoolId || null, material: job.material, gramsPlanned: Number(job.gramsPlanned), gramsActual: Number(gramsActual) };
+            if (isNaN(gramsActual) || gramsActual <= 0) { CP.ui.toast('Enter valid actual grams (> 0).', 'danger'); return false; }
+            const jobRunId = job.jobRunId || `${job.orderId}_${job.partId}_${job.startedAt}`;
+            const payload = { printerId: printer.id, orderId: job.orderId, partId: job.partId, spoolId: job.spoolId || null, material: job.material, gramsPlanned: Number(job.gramsPlanned), gramsActual: Number(gramsActual), startedAt: job.startedAt, jobRunId };
             updatePartAndOrder(job.orderId, job.partId, { status: 'done' }, (order) => {
               if (order.parts.every(p => p.status === 'done')) order.status = 'post';
             });
@@ -226,12 +247,15 @@ CP.farm = (function () {
 
   function openFailedModal(printer) {
     const job = printer.currentJob;
-    if (!job) return;
+    if (!job || printer.status !== 'printing') {
+      CP.ui.toast(`Printer ${printer.name} is not currently printing.`, 'warning');
+      return;
+    }
     const reasons = ['Spaghetti', 'Warping', 'Layer shift', 'Nozzle clog', 'Bed adhesion', 'Power cut', 'Other'];
     const optionsHtml = reasons.map(r => `<option value="${r}">${r}</option>`).join('');
     const wrapper = document.createElement('div');
     wrapper.innerHTML = `
-      <div class="banner banner-danger" style="margin-bottom:12px;"><div><strong>Failure: ${CP.util.esc(job.partName)}</strong> (${CP.util.esc(job.orderId)})</div><div style="font-size:12px;">The part will be returned to the Pending Queue.</div></div>
+      <div class="banner banner-danger" style="margin-bottom:12px;"><div><strong>Failure: ${CP.util.esc(job.partName)}</strong> (${CP.util.esc(job.orderId)})</div><div style="font-size:12px;">The part will be returned to the Pending Queue for reprint.</div></div>
       <div class="field"><label>Failed Grams Lost (g):</label><input type="number" class="input" id="fail-grams" min="1" step="1" value="${job.gramsPlanned}"></div>
       <div class="field"><label>Failure Reason:</label><select class="select" id="fail-reason">${optionsHtml}</select></div>
       <div class="field"><label>Notes / Observations:</label><textarea class="textarea" id="fail-notes" placeholder="e.g. Detached from bed at 40%..."></textarea></div>
@@ -245,9 +269,11 @@ CP.farm = (function () {
           label: 'Confirm Failure', kind: 'btn-danger',
           onClick: () => {
             const failedG = Number(wrapper.querySelector('#fail-grams')?.value) || job.gramsPlanned;
+            if (isNaN(failedG) || failedG <= 0) { CP.ui.toast('Enter valid failed grams (> 0).', 'danger'); return false; }
             const reason = wrapper.querySelector('#fail-reason')?.value || 'Other';
             const notes = wrapper.querySelector('#fail-notes')?.value.trim() || '';
-            const payload = { printerId: printer.id, orderId: job.orderId, partId: job.partId, spoolId: job.spoolId || null, material: job.material, failedG: Number(failedG), reason, notes };
+            const jobRunId = job.jobRunId || `${job.orderId}_${job.partId}_${job.startedAt}`;
+            const payload = { printerId: printer.id, orderId: job.orderId, partId: job.partId, spoolId: job.spoolId || null, material: job.material, failedG: Number(failedG), reason, notes, startedAt: job.startedAt, jobRunId };
             updatePartAndOrder(job.orderId, job.partId, { status: 'pending', assignedPrinterId: null, spoolId: null });
             const printers = getPrinters(), pr = printers.find(p => p.id === printer.id);
             if (pr) {
@@ -257,7 +283,7 @@ CP.farm = (function () {
               CP.store.set('cp_printers', printers);
             }
             if (CP.bus) CP.bus.emit('job:failed', payload);
-            CP.ui.toast(`Job marked failed (${reason}). Part re-queued.`, 'warning');
+            CP.ui.toast(`Job marked failed (${reason}). Part re-queued for reprint.`, 'warning');
             renderView();
             return true;
           }
@@ -499,69 +525,9 @@ CP.farm = (function () {
   }
 
   function seedFarmData() {
-    const settings = CP.store.get('cp_settings', CP.defaults ? CP.defaults.settings : {});
-    const now = Date.now(), nowISO = new Date(now).toISOString();
-
-    let spools = CP.store.get('cp_spools', []);
-    if (!spools || spools.length === 0) {
-      spools = [
-        { id: 'SP-PLA-01', material: 'PLA', color: 'Jet Black', brand: 'Numakers', supplier: 'Parrys Chennai', initialG: 1000, remainingG: 820, costINR: 950, purchasedAt: nowISO, status: 'active', loadedOnPrinterId: 1 },
-        { id: 'SP-PLA-02', material: 'PLA', color: 'Pure White', brand: 'Numakers', supplier: 'Parrys Chennai', initialG: 1000, remainingG: 960, costINR: 950, purchasedAt: nowISO, status: 'active', loadedOnPrinterId: null },
-        { id: 'SP-ABS-01', material: 'ABS', color: 'Signal Red', brand: 'Wol3D', supplier: 'Ambattur Chennai', initialG: 1000, remainingG: 640, costINR: 1100, purchasedAt: nowISO, status: 'active', loadedOnPrinterId: 2 },
-        { id: 'SP-TPU-01', material: 'TPU', color: 'Translucent Blue', brand: 'eSun', supplier: 'Parrys Chennai', initialG: 1000, remainingG: 900, costINR: 1450, purchasedAt: nowISO, status: 'active', loadedOnPrinterId: 5 }
-      ];
-      CP.store.set('cp_spools', spools);
+    if (CP.dev && typeof CP.dev.seedFarmData === 'function') {
+      CP.dev.seedFarmData();
     }
-
-    let orders = CP.store.get('cp_orders', []);
-    const mkPart = (name, mat, layer, infill, wt, qty, status, prId, spId) => ({
-      id: CP.util.uid('pt'), name, material: mat, layer, infillPct: infill, weightG: wt, qty,
-      printHoursOverride: null, status, assignedPrinterId: prId, spoolId: spId, notes: ''
-    });
-
-    const mkOrder = (id, daysOffset, cust, notes, parts, st, adv) => {
-      const calc = CP.pricing ? CP.pricing.calcOrder({ parts, pricing: { advance: adv } }, settings) : { subtotal: 400, total: 400 };
-      return {
-        id, createdAt: new Date(now - 86400000).toISOString(), updatedAt: nowISO, customer: cust,
-        dueDate: CP.util.addDays(CP.util.todayISO(), daysOffset), notes, parts,
-        pricing: { subtotal: calc.subtotal, discountPct: 0, discountAmt: 0, gstPct: 0, gstAmt: 0, total: calc.total, advance: adv },
-        payment: { status: adv > 0 ? 'advance' : 'unpaid', paidAmount: adv, history: adv > 0 ? [{ id: CP.util.uid('pay'), ts: nowISO, amount: adv, mode: 'UPI', txnRef: 'UPI-DEMO', note: 'Advance' }] : [] },
-        status: st, invoiceNo: null, challanNo: null
-      };
-    };
-
-    if (!orders.find(o => o.id === 'CP-2026-0001')) orders.push(mkOrder('CP-2026-0001', 3, { name: 'Aravind Kumar', phone: '9840123456', email: 'aravind@aerovision.in', category: 'Hardware Startup R&D' }, 'Robotic arm link', [mkPart('Robotic Gripper Finger', 'PLA', '0.20', 35, 65, 1, 'printing', 1, 'SP-PLA-01')], 'printing', 200));
-    if (!orders.find(o => o.id === 'CP-2026-0002')) orders.push(mkOrder('CP-2026-0002', 2, { name: 'Pooja Sundaram', phone: '9789012345', email: 'pooja.s@annauniv.edu', category: 'College Project' }, 'UAV mount', [mkPart('Quadcopter Motor Mount', 'ABS', '0.20', 40, 85, 1, 'printing', 2, 'SP-ABS-01')], 'printing', 300));
-
-    let pendingCount = 0;
-    orders.forEach(o => { if (o.status === 'confirmed' || o.status === 'printing') (o.parts || []).forEach(p => { if (p.status === 'pending') pendingCount++; }); });
-
-    if (pendingCount < 5) {
-      orders.push(
-        mkOrder('CP-2026-0003', 1, { name: 'Apex Auto Dynamics', phone: '9444012345', email: 'service@apexauto.in', category: 'Automotive Garage' }, 'Priority telemetry mounts', [mkPart('Drone Gimbal Baseplate', 'PLA', '0.20', 30, 45, 1, 'pending', null, null), mkPart('Telemetry Mast Clamp', 'ABS', '0.20', 45, 35, 2, 'pending', null, null)], 'confirmed', 500),
-        mkOrder('CP-2026-0004', 2, { name: 'Vignesh R', phone: '9884012345', email: 'vignesh.r@gmail.com', category: 'Hobbyist' }, 'Action camera shoe', [mkPart('GoPro Helmet J-Hook', 'TPU', '0.20', 100, 40, 1, 'pending', null, null), mkPart('Handlebar Spreader Clamp', 'ABS', '0.12', 50, 30, 2, 'pending', null, null)], 'confirmed', 400),
-        mkOrder('CP-2026-0005', 4, { name: 'IIT Madras Tech Club', phone: '9840998877', email: 'sae@iitm.ac.in', category: 'College Project' }, 'Aero wing test flap', [mkPart('Formula Student Aero Flap', 'PLA', '0.28', 20, 140, 1, 'pending', null, null), mkPart('ECU Module Enclosure Lid', 'PLA', '0.20', 30, 50, 1, 'pending', null, null)], 'confirmed', 600)
-      );
-    }
-    CP.store.set('cp_orders', orders);
-
-    const printers = [];
-    for (let i = 1; i <= 10; i++) {
-      const curJob = i === 1 ? { orderId: 'CP-2026-0001', partId: 'pt_farm_01', partName: 'Robotic Gripper Finger', material: 'PLA', spoolId: 'SP-PLA-01', gramsPlanned: 65, startedAt: new Date(now - 38 * 60000).toISOString(), durationMin: 90 }
-        : i === 2 ? { orderId: 'CP-2026-0002', partId: 'pt_farm_02', partName: 'Quadcopter Motor Mount', material: 'ABS', spoolId: 'SP-ABS-01', gramsPlanned: 85, startedAt: new Date(now - 75 * 60000).toISOString(), durationMin: 120 }
-        : null;
-      printers.push({
-        id: i, name: `Printer ${String(i).padStart(2, '0')}`,
-        model: i <= 2 ? 'Bambu Lab X1-Carbon' : i === 3 ? 'Bambu Lab P1S' : i === 4 ? 'Ender 3' : i === 5 ? 'Ender 3 Pro' : 'Ender 3',
-        status: i <= 2 ? 'printing' : i === 3 ? 'maint' : i === 4 ? 'error' : i === 5 ? 'post' : 'idle',
-        statusNote: i === 3 ? 'Carbon rod IPA wipe & Z lead screw lube' : i === 4 ? 'Nozzle clog - awaiting hotend clearance' : '',
-        material: i === 2 || i === 4 ? 'ABS' : i === 5 ? 'TPU' : 'PLA', currentJob: curJob,
-        nozzle: { type: i <= 3 ? 'hardened_steel' : 'brass', installedAt: nowISO, gramsExtruded: 1200 + i * 200, abrasiveGramsExtruded: 150 },
-        integration: i <= 3 ? 'bambu' : 'none', octoprint: { url: '', apiKey: '' },
-        bambu: { ip: i <= 3 ? `192.168.1.10${i}` : '', accessCode: i <= 3 ? '12345678' : '', serial: i <= 3 ? `01P00A12345600${i}` : '', bridgeUrl: 'http://127.0.0.1:5005' }
-      });
-    }
-    CP.store.set('cp_printers', printers);
   }
 
   function render(rootElement) {
