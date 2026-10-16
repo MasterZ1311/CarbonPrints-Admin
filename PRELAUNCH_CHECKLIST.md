@@ -36,28 +36,31 @@ Review your baseline pricing with your Chartered Accountant or finance lead:
 
 ---
 
-## 3. Print Test Invoice & Delivery Challan
+## 3. Verify Documents: Quotations, Invoices & Delivery Challans
 
-Test your workshop office printer to verify A4 document formatting:
-- [ ] In **Order Desk** (`#/order-desk`), build a quick 2-part dummy quote and click **Confirm Order**.
-- [ ] Go to **Orders & Billing** (`#/orders`):
-  - Click the `📄` icon to open the **Tax Invoice**. Press `Ctrl + P` to print. Verify company name, GSTIN, HSN code (998898), CGST/SGST amounts, and Rupee words.
-  - Click the `🚚` icon to open the **Delivery Challan**. Verify "GOODS NOT FOR SALE" header, piece count checklist, and dual signature blocks.
-- [ ] Confirm everything fits cleanly on single/multi-page A4 sheets without overlapping margins.
+Test your workshop office printer and PDF generation:
+- [ ] In **Order Desk** (`#/order-desk`), create a quick 2-part test quote and click **Preview Quote** (`📜`).
+  - Verify formal letterhead, quotation validity (15 days), part specifications, unit rates (₹/g), advance required, and customer signature block.
+  - Verify that viewing/printing a quote does NOT assign an invoice number (`invoiceNo` remains empty).
+- [ ] Confirm the order and go to **Orders & Billing** (`#/orders`):
+  - Click `📄` to open the **Tax Invoice**. Press `Ctrl + P` to print / Save as PDF. Verify company name, GSTIN, CGST/SGST amounts, and Rupee words.
+  - Click `🚚` to open the **Delivery Challan**. Verify "GOODS NOT FOR SALE" header, piece count checklist, and dual signature blocks.
+- [ ] Confirm everything renders cleanly in A4 without overlapping margins.
 
 ---
 
-## 4. Enter Real Opening Filament Spool Inventory (`#/inventory`)
+## 4. Enter Real Opening Inventory & Operating Expenses
 
-Take an accurate physical audit of your filament stock:
-- [ ] Weigh every physical spool currently on your shelves using the digital scale.
+Take an accurate physical audit of your filament stock and initial overhead:
+- [ ] Weigh every physical spool currently on shelves using the digital scale.
 - [ ] In **Spools & Stock** (`#/inventory`), click **+ Add Spool** for each roll:
   - Material (PLA / ABS / TPU)
   - Color & Brand (e.g., *Jet Black - Numakers*)
   - Vendor / Source (e.g., *Parrys Chennai* or *Ambattur*)
   - Net remaining filament weight in grams (subtract spool tare weight, typically ~200g)
   - Cost per spool in ₹
-- [ ] Assign the active spools to their respective loaded printers (`P01` to `P10`).
+- [ ] Assign active spools to loaded printers (`P01` to `P10`).
+- [ ] In **Expenses** (`#/expenses`), record opening material purchases, maintenance tools, or shop rent. Verify that recorded payments received and expenses compute monthly cash movement accurately without claiming false net profit.
 
 ---
 
@@ -65,8 +68,9 @@ Take an accurate physical audit of your filament stock:
 
 Wipe out all sandbox and mock records before real operations begin:
 - [ ] Navigate to **Settings** > **Diagnostics & Dev** tab.
-- [ ] Click **Reset All Data (Clear Database)**.
-- [ ] This wipes all test orders, temporary scrap logs, and demo payments while preserving your calibrated settings and 10 printer slots.
+- [ ] Click **Safe Reset (Clear Operational Data)**.
+- [ ] This clears test orders, operational scrap records, QC entries, and demo payments while strictly preserving your business configuration, printer profiles, pricing calibration, and maintenance checklists.
+*(Note: Use **Full Factory Reset** only if you wish to wipe the entire database and restore initial system defaults; a safety backup JSON will be downloaded automatically first.)*
 
 ---
 

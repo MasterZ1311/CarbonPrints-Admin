@@ -133,12 +133,14 @@
   <script src="js/core/router.js?v=qa12"></script>
   <script src="js/core/ui.js?v=qa12"></script>
   <script src="js/services/pricing.js?v=qa12"></script>
+  <script src="js/services/customer-svc.js?v=qa12"></script>
   <script src="js/services/wa.js?v=qa12"></script>
   <script src="js/services/docs.js?v=qa12"></script>
   <script src="js/services/inventory-svc.js?v=qa12"></script>
   <script src="js/services/scrap-svc.js?v=qa12"></script>
   <script src="js/services/maint-svc.js?v=qa12"></script>
   <script src="js/services/csv.js?v=qa12"></script>
+  <script src="js/services/expense-svc.js?v=qa13"></script>
   <script src="js/services/octoprint.js?v=qa12"></script>
   <script src="js/services/bambu.js?v=qa12"></script>
 
@@ -535,6 +537,202 @@
 
         const pr = CP.store.get('cp_printers')[0];
         assertEqual(pr.nozzle.type, 'hardened_steel', 'Nozzle upgraded to hardened steel for Bambu');
+      });
+
+      // =======================================================================
+      // SUITE 15: Dedicated Quotation Documents & Snapshots
+      // =======================================================================
+      suite('15. Dedicated Quotation Documents & Snapshots');
+
+      test('generateQuoteHTML produces valid letterhead and does not issue invoice number', () => {
+        const settings = CP.store.get('cp_settings');
+        const quoteOrder = {
+          id: 'CP-QT-2026-TEST',
+          status: 'quote',
+          invoiceNo: null,
+          customer: { name: 'Pooja', phone: '9840123456' },
+          parts: [{ name: 'Sensor Mount', material: 'PLA', layer: '0.20', infillPct: 20, weightG: 30, qty: 1 }],
+          pricing: { total: 120, subtotal: 120, isSnapshotted: true }
+        };
+
+        const html = CP.docs.generateQuoteHTML(quoteOrder, settings);
+        assert(html.includes('FORMAL QUOTATION'), 'Contains FORMAL QUOTATION title');
+        assert(html.includes('CP-QT-2026-TEST'), 'Contains quote ID');
+        assert(html.includes('Pooja'), 'Contains customer name');
+        assert(quoteOrder.invoiceNo === null, 'invoiceNo remains null');
+      });
+
+      test('Quote generation preserves historical snapshotted pricing against Settings changes', () => {
+        const oldSettings = CP.store.get('cp_settings');
+        const snapshotted = {
+          id: 'CP-QT-HIST-01',
+          status: 'quote',
+          parts: [{ name: 'Bracket', material: 'PLA', layer: '0.20', infillPct: 20, weightG: 100, qty: 1, linePrice: 400, ratePerGram: 4 }],
+          pricing: { subtotal: 400, total: 472, gstAmt: 72, isSnapshotted: true }
+        };
+
+        const changedSettings = JSON.parse(JSON.stringify(oldSettings));
+        changedSettings.pricing.ratePerGram.PLA = 10;
+        const html = CP.docs.generateQuoteHTML(snapshotted, changedSettings);
+        assert(html.includes('472.00'), 'Historical snapshotted total preserved');
+        assert(html.includes('4.00/g'), 'Historical unit rate preserved');
+      });
+
+      // =======================================================================
+      // SUITE 12: Customer Master, Templates & Duplication (Phase 3)
+      // =======================================================================
+      suite('12. Customer Master, Templates & Duplication');
+
+      test('Customer Master validation, save, search and duplicate detection', () => {
+        const invalid = CP.customers.save({ name: '', phone: '123' });
+        assert(!invalid.ok, 'Rejects invalid customer');
+
+        const saved = CP.customers.save({ name: 'Naveen Kumar', phone: '9840999888', email: 'naveen@startup.io', category: 'Hardware Startup R&D' });
+        assert(saved.ok && saved.customer.id, 'Saves customer with normalized phone');
+        assertEqual(saved.customer.phone, '9840999888');
+
+        const dups = CP.customers.findDuplicates({ phone: '9840999888' });
+        assertEqual(dups.length, 1, 'Finds duplicate by phone');
+
+        const search = CP.customers.search('naveen');
+        assertEqual(search.length, 1, 'Searches customer by name');
+
+        CP.customers.remove(saved.customer.id);
+      });
+
+      test('Idempotent learnFromOrders never merges on name alone', () => {
+        CP.store.set('cp_orders', [
+          { id: 'O1', customer: { name: 'Kiran', phone: '9840111222' } },
+          { id: 'O2', customer: { name: 'Kiran', phone: '9840333444' } }
+        ]);
+        const res = CP.customers.learnFromOrders();
+        assert(res.importedCount >= 2, 'Imports 2 different Kirans due to differing phone numbers');
+        const k1 = CP.customers.findByPhone('9840111222');
+        const k2 = CP.customers.findByPhone('9840333444');
+        assert(k1 && k2 && k1.id !== k2.id, 'Maintains separate identities for distinct phones');
+      });
+
+      test('Part templates and order duplication', () => {
+        const tmpls = CP.customers.getTemplates();
+        assert(tmpls.length > 0, 'Seeds default templates');
+        const part = CP.customers.createPartFromTemplate(tmpls[0]);
+        assertEqual(part.name, tmpls[0].name, 'Part created from template inherits name');
+        assert(part.id && part.status === 'pending', 'Part created has pending status');
+
+        const order = {
+          id: 'CP-ORD-99', status: 'confirmed', invoiceNo: 'INV-99',
+          parts: [part], pricing: { total: 500, isSnapshotted: true },
+          payment: { status: 'settled', paidAmount: 500, history: [{ amount: 500 }] }
+        };
+        const clone = CP.customers.cloneOrder(order);
+        assertEqual(clone.id, null, 'Duplicated order ID is null');
+        assertEqual(clone.status, 'quote', 'Duplicated order status is quote');
+        assertEqual(clone.pricing.isSnapshotted, false, 'Duplicated order pricing snapshot unfrozen');
+        assertEqual(clone.payment.status, 'unpaid', 'Duplicated order payment reset');
+      });
+
+      // =======================================================================
+      // Suite 13: Phase 4 — Expenses & Accounts, Cash Movement & CSV Validation
+      // =======================================================================
+      suite('Phase 4: Expenses & Accounts, Cash Movement & CSV Validation');
+
+      test('Expense CRUD & unique sequential ID generation', () => {
+        const exp = CP.expenses.save({
+          date: '2026-10-15', category: 'Filament & Material Stock',
+          payee: 'Numakers 3D', description: '5kg PLA Spools',
+          amount: 4250, paymentMode: 'UPI', referenceNo: 'UPI-112233'
+        });
+        assert(exp.id && exp.id.startsWith('CP-EXP-2026-'), 'Generated sequential ID');
+        assertEqual(exp.amount, 4250, 'Expense amount saved');
+        assertEqual(exp.payee, 'Numakers 3D', 'Payee saved');
+
+        const found = CP.expenses.getById(exp.id);
+        assert(found && found.id === exp.id, 'Retrieved expense by ID');
+
+        const updated = CP.expenses.save({
+          id: exp.id, date: '2026-10-15', category: 'Filament & Material Stock',
+          payee: 'Numakers India', description: '5kg PLA Spools', amount: 4000
+        });
+        assertEqual(updated.amount, 4000, 'Expense amount updated');
+        assertEqual(updated.id, exp.id, 'Preserved same ID on update');
+
+        const delRes = CP.expenses.remove(exp.id);
+        assertEqual(delRes, true, 'Expense removed successfully');
+        assert(CP.expenses.getById(exp.id) === null, 'Deleted expense not found');
+      });
+
+      test('Expense validation rejects invalid dates, negative amounts, and empty fields', () => {
+        let errCount = 0;
+        try { CP.expenses.save({ date: '2026-10-15', category: 'Rent', payee: 'Landlord', description: 'Rent', amount: -500 }); }
+        catch (e) { errCount++; }
+
+        try { CP.expenses.save({ date: '2026-10-15', category: 'Rent', payee: 'Landlord', description: 'Rent', amount: 0 }); }
+        catch (e) { errCount++; }
+
+        try { CP.expenses.save({ date: 'not-a-date', category: 'Rent', payee: 'Landlord', description: 'Rent', amount: 500 }); }
+        catch (e) { errCount++; }
+
+        try { CP.expenses.save({ date: '2026-10-15', category: 'Rent', payee: '', description: 'Rent', amount: 500 }); }
+        catch (e) { errCount++; }
+
+        try { CP.expenses.save({ date: '2026-10-15', category: 'Rent', payee: 'Landlord', description: '', amount: 500 }); }
+        catch (e) { errCount++; }
+
+        assertEqual(errCount, 5, 'All 5 invalid expense cases threw validation errors');
+      });
+
+      test('Expense search, category, mode, and date filtering', () => {
+        CP.store.set('cp_expenses', []);
+        CP.expenses.save({ date: '2026-09-01', category: 'Rent', payee: 'Estate Corp', description: 'Monthly shed rent', amount: 15000, paymentMode: 'Bank Transfer' });
+        CP.expenses.save({ date: '2026-10-05', category: 'Electricity & Utilities', payee: 'TNEB', description: 'Power bill Oct', amount: 3500, paymentMode: 'UPI' });
+        CP.expenses.save({ date: '2026-10-10', category: 'Filament & Material Stock', payee: 'Numakers', description: 'PLA Black', amount: 8000, paymentMode: 'UPI' });
+
+        const searchMatch = CP.expenses.filter({ q: 'TNEB' });
+        assertEqual(searchMatch.length, 1, 'Search query matched TNEB');
+
+        const catMatch = CP.expenses.filter({ category: 'Rent' });
+        assertEqual(catMatch.length, 1, 'Category filter matched Rent');
+
+        const modeMatch = CP.expenses.filter({ paymentMode: 'UPI' });
+        assertEqual(modeMatch.length, 2, 'Payment mode filter matched UPI (2 items)');
+
+        const octMatch = CP.expenses.filter({ startDate: '2026-10-01', endDate: '2026-10-31' });
+        assertEqual(octMatch.length, 2, 'Date range filter matched October records');
+      });
+
+      test('Monthly totals & Cash Movement (receipts - expenses, not net profit)', () => {
+        const octTotal = CP.expenses.getMonthTotal(2026, 9);
+        assertEqual(octTotal, 11500, 'Calculated October expenses sum');
+
+        CP.store.set('cp_orders', [
+          {
+            id: 'CP-ORD-TEST',
+            status: 'confirmed',
+            payment: {
+              status: 'settled',
+              paidAmount: 20000,
+              history: [{ ts: '2026-10-05T10:00:00.000Z', amount: 20000, mode: 'UPI' }]
+            }
+          }
+        ]);
+
+        const mov = CP.expenses.getCashMovement(2026, 9);
+        assertEqual(mov.paymentsReceived, 20000, 'Customer cash received');
+        assertEqual(mov.expensesRecorded, 11500, 'Operating expenses recorded');
+        assertEqual(mov.cashMovement, 8500, 'Net cash movement (Receipts - Expenses)');
+      });
+
+      test('All-or-nothing CSV import validation & rejection without store corruption', () => {
+        const initialCount = CP.expenses.getAll().length;
+        const validCSV = `Date,Expense ID,Category,Payee / Vendor,Description,Amount (₹),Payment Mode\n2026-10-18,CP-EXP-2026-0888,Tools & Software,AWS,Hosting,2500,Card`;
+        const resValid = CP.expenses.validateAndImportCSV(validCSV, 'merge');
+        assert(resValid.ok === true || resValid.success === true, 'Valid CSV import succeeded');
+        assertEqual(CP.expenses.getAll().length, initialCount + 1, 'Imported row added to expenses');
+
+        const corruptCSV = `Date,Expense ID,Category,Payee / Vendor,Description,Amount (₹),Payment Mode\n2026-10-19,,Rent,Landlord,Valid Row,5000,UPI\n2026-99-99,,Rent,Landlord,Bad Date,-999,UPI`;
+        const resCorrupt = CP.expenses.validateAndImportCSV(corruptCSV, 'merge');
+        assertEqual(resCorrupt.ok, false, 'Corrupt CSV rejected');
+        assertEqual(CP.expenses.getAll().length, initialCount + 1, 'All-or-nothing: Live store untouched after failed import');
       });
 
       // =======================================================================

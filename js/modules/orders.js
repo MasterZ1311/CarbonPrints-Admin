@@ -188,9 +188,17 @@ CP.registerModule((function () {
             } catch (quotaErr) {
               if (historyEntry.proofDataUrl) {
                 delete historyEntry.proofDataUrl;
-                CP.store.set('cp_orders', orders);
-                CP.ui.toast("Proof image could not be stored due to storage quota, but payment was recorded.", "warning");
-              } else { throw quotaErr; }
+                try {
+                  CP.store.set('cp_orders', orders);
+                  CP.ui.toast("Proof image could not be stored due to storage quota, but payment was recorded.", "warning");
+                } catch (retryErr) {
+                  CP.ui.toast("Failed to record payment: storage write failed.", "danger");
+                  return false;
+                }
+              } else {
+                CP.ui.toast("Failed to record payment: storage write failed.", "danger");
+                return false;
+              }
             }
 
             CP.ui.toast(`Payment of ₹ ${CP.util.fmtINR(amount)} recorded successfully!`, 'success');
@@ -258,9 +266,13 @@ CP.registerModule((function () {
           const hEntry = target?.payment?.history?.find(h => h && h.id === delBtn.getAttribute('data-id'));
           if (hEntry) {
             delete hEntry.proofDataUrl;
-            CP.store.set('cp_orders', orders);
-            CP.ui.toast("Proof image removed.", "info");
-            updateTable();
+            try {
+              CP.store.set('cp_orders', orders);
+              CP.ui.toast("Proof image removed.", "info");
+              updateTable();
+            } catch (err) {
+              CP.ui.toast(`Failed to remove proof: ${err.message || err}`, "danger");
+            }
           }
         }
       });
@@ -290,15 +302,29 @@ CP.registerModule((function () {
             if (target) {
               target.status = targetStatus;
               target.updatedAt = new Date().toISOString();
-              CP.store.set('cp_orders', orders);
-              CP.ui.toast(`Order ${order.id} moved to ${targetStatus.toUpperCase()}!`, 'success');
-              updateTable();
+              try {
+                CP.store.set('cp_orders', orders);
+                CP.ui.toast(`Order ${order.id} moved to ${targetStatus.toUpperCase()}!`, 'success');
+                updateTable();
+                return true;
+              } catch (err) {
+                CP.ui.toast(`Failed to update status: ${err.message || err}`, 'danger');
+                return false;
+              }
             }
             return true;
           }
         }
       ]
     });
+  }
+
+  function duplicateOrder(order) {
+    if (!order) return;
+    const clone = CP.customers ? CP.customers.cloneOrder(order) : JSON.parse(JSON.stringify(order));
+    CP.store.set('cp_draft_order', clone);
+    CP.ui.toast(`Order ${order.id} cloned as new draft quote!`, 'success');
+    CP.router.navigate('#/order-desk');
   }
 
   function updateTable() {
@@ -357,11 +383,13 @@ CP.registerModule((function () {
           <td style="cursor:pointer;" class="btn-pay-history">${CP.ui.badge((o.payment?.status || 'unpaid').toUpperCase(), getPaymentBadgeKind(o.payment?.status))}</td>
           <td style="white-space:nowrap; text-align:right;">
             <div style="display:inline-flex; gap:4px;">
-              <button type="button" class="btn btn-ghost btn-sm btn-edit-order" title="Edit">✏️</button>
-              <button type="button" class="btn btn-ghost btn-sm btn-status-order" title="Status">🔄</button>
-              <button type="button" class="btn btn-ghost btn-sm btn-pay-order" title="Pay">💰</button>
-              <button type="button" class="btn btn-ghost btn-sm btn-inv-order" title="Invoice">📄</button>
-              <button type="button" class="btn btn-ghost btn-sm btn-dc-order" title="Challan">🚚</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-quote-order" title="Quotation" aria-label="Quotation">📜</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-edit-order" title="Edit" aria-label="Edit Order">✏️</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-dup-order" title="Duplicate Order" aria-label="Duplicate Order">📑</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-status-order" title="Status" aria-label="Status">🔄</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-pay-order" title="Pay" aria-label="Record Payment">💰</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-inv-order" title="Invoice" aria-label="Tax Invoice">📄</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-dc-order" title="Challan" aria-label="Delivery Challan">🚚</button>
             </div>
           </td>
         </tr>
@@ -374,7 +402,7 @@ CP.registerModule((function () {
     const orders = CP.store.get('cp_orders', []) || [];
     const summary = computeSummary(orders);
 
-    const categories = ['College Project', 'Hardware Startup R&D', 'Automotive Garage', 'Hobbyist'];
+    const categories = CP.customers ? CP.customers.getCategories() : ['College Project', 'Hardware Startup R&D', 'Automotive Garage', 'Hobbyist'];
     const catOptions = `<option value="all">All Categories</option>` + categories.map(c => `<option value="${CP.util.esc(c)}" ${filterState.category === c ? 'selected' : ''}>${CP.util.esc(c)}</option>`).join('');
     const statusOptions = ['all', 'quote', 'confirmed', 'printing', 'post', 'qc', 'ready', 'delivered', 'cancelled'].map(s => `<option value="${s}" ${filterState.status === s ? 'selected' : ''}>${s === 'all' ? 'All Statuses' : s.toUpperCase()}</option>`).join('');
     const paymentOptions = ['all', 'unpaid', 'advance', 'settled'].map(p => `<option value="${p}" ${filterState.payment === p ? 'selected' : ''}>${p === 'all' ? 'All Payments' : p.toUpperCase()}</option>`).join('');
@@ -488,7 +516,9 @@ CP.registerModule((function () {
       const order = (CP.store.get('cp_orders', []) || []).find(o => o && o.id === row.getAttribute('data-order-id'));
       if (!order) return;
 
+      if (e.target.closest('.btn-quote-order')) { CP.docs.previewQuote(order.id); return; }
       if (e.target.closest('.btn-edit-order') || e.target.closest('.order-id-link')) { CP.router.navigate(`#/order-desk/${order.id}`); return; }
+      if (e.target.closest('.btn-dup-order')) { duplicateOrder(order); return; }
       if (e.target.closest('.btn-status-order')) { openChangeStatusModal(order); return; }
       if (e.target.closest('.btn-pay-order')) { openRecordPaymentModal(order); return; }
       if (e.target.closest('.btn-pay-history')) { openPaymentHistoryModal(order); return; }

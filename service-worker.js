@@ -11,7 +11,7 @@
  * newest assets for all connected clients.
  * ============================================================================
  */
-const CACHE_VERSION = 'cp-os-v6';
+const CACHE_VERSION = 'cp-os-v8';
 
 /**
  * Precache list containing EVERY file in the project required for complete offline operation.
@@ -34,12 +34,14 @@ const PRECACHE_ASSETS = [
   'js/core/ui.js',
   'js/core/dev.js',
   'js/services/pricing.js',
+  'js/services/customer-svc.js',
   'js/services/wa.js',
   'js/services/docs.js',
   'js/services/inventory-svc.js',
   'js/services/scrap-svc.js',
   'js/services/maint-svc.js',
   'js/services/csv.js',
+  'js/services/expense-svc.js',
   'js/services/octoprint.js',
   'js/services/bambu.js',
   'js/modules/dashboard.js',
@@ -50,6 +52,7 @@ const PRECACHE_ASSETS = [
   'js/modules/qc.js',
   'js/modules/maintenance.js',
   'js/modules/data.js',
+  'js/modules/expenses.js',
   'js/modules/settings.js'
 ];
 

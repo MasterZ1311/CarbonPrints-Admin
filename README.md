@@ -1,6 +1,6 @@
 # CarbonPrints Company OS
 
-**CarbonPrints Company OS** is a lightweight, offline-first internal operating system for **CarbonPrints Private Limited**, a 3D printing service hub based in Chennai, India. It manages a 10-printer FDM print farm, quotation generation, WhatsApp dispatch, GST invoicing, spool inventory, QC inspection, and machine maintenance without requiring cloud backends or subscriptions.
+**CarbonPrints Company OS** is a lightweight, offline-first internal operating system for **CarbonPrints Private Limited**, a 3D printing service hub based in Chennai, India. It manages a 10-printer FDM print farm, customer directory, quotation generation, WhatsApp dispatch, GST invoicing, spool inventory, operational expenses & cash movement, QC inspection, and machine maintenance without requiring cloud backends or subscriptions.
 
 ---
 
@@ -13,14 +13,17 @@
 ├── tests.html               # Zero-dependency browser self-test suite
 ├── css/
 │   ├── styles.css           # Global typography, dark/light themes, badges, UI tokens
-│   └── print.css            # Clean A4 print stylesheets for Tax Invoices & Delivery Challans
+│   └── print.css            # Clean A4 print stylesheets for Formal Quotes, Tax Invoices & Delivery Challans
 ├── js/
 │   ├── app.js               # Application bootstrap, PWA registration, and global telemetry
 │   ├── core/                # Core foundation (store, bus, router, ui, util, defaults, dev)
-│   ├── services/            # Business domain services (pricing, wa, docs, inventory, scrap, maint, csv, octo)
-│   └── modules/             # UI views (dashboard, farm, orderdesk, orders, inventory, qc, maint, data, settings)
+│   ├── services/            # Business domain services (pricing, customer-svc, wa, docs, inventory, scrap, maint, expense-svc, csv, octo, bambu)
+│   └── modules/             # UI views (dashboard, farm, orderdesk, orders, inventory, qc, maintenance, expenses, data, settings)
 ├── icons/                   # PWA application icons (192px and 512px)
-└── tools/                   # Browser utilities (icon generator canvas)
+└── tools/                   # Workshop utilities:
+    ├── bambu_bridge.py      # Local loopback Python bridge (port 5005) for Bambu Lab LAN MQTT telemetry
+    ├── run_bambu_bridge.bat # One-click Windows startup script for workshop PC
+    └── make-icons.html      # Standalone browser canvas tool for PWA icon generation
 ```
 
 ---
@@ -72,7 +75,8 @@ Because the application uses an aggressive **cache-first service worker** for in
 
 ## ⚠️ Known Limitations & Operational Rules
 
-- **Browser-Local Storage**: All orders, spools, payments, and settings are stored locally in the browser's HTML5 `localStorage`.
+- **Browser-Local Storage**: All orders, spools, expenses, payments, and settings are stored locally in the browser's HTML5 `localStorage` (~5MB quota).
 - **No Automatic Cloud Sync**: Data does NOT automatically sync across multiple computers or phones. To move your database to another computer, export a backup from Computer A and restore it on Computer B.
-- **Do Not Clear Browser Cookies/Site Data**: Clearing browser website data or using incognito mode will wipe your local database unless a recent JSON backup has been saved.
+- **Do Not Clear Browser Cookies/Site Data**: Clearing browser website data or using incognito mode will wipe your local database unless a recent JSON backup has been saved. Always take daily backups (`#/data`).
+- **Telemetry & Local Bridge**: Bambu Lab LAN telemetry requires running `tools/run_bambu_bridge.bat` on the workshop PC (bound strictly to loopback `127.0.0.1:5005`). Slicer handoff provides verified slicing specifications, clipboard parameters, and `.txt` job tickets.
 - **OctoPrint Mixed-Content Rules**: Due to standard browser security policies, local HTTP OctoPrint instances cannot be fetched from HTTPS-hosted websites (e.g., GitHub Pages) unless OctoPrint has SSL configured. When running locally via `file://` or `http://localhost`, OctoPrint connections work without restrictions.
